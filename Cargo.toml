@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sanct-crypto",
+    "crates/sanct-wasm",
+]
+
+[workspace.dependencies]
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+ml-kem = { version = "0.2", features = ["deterministic"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+argon2 = "0.5"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[profile.dev]
+debug = 0
+incremental = true
+codegen-units = 256
+
+[profile.test]
+debug = 0
+incremental = true
+codegen-units = 256
