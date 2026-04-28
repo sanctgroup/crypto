@@ -2,69 +2,22 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_identitykeys_free: (a: number, b: number) => void;
+export const __wbg_pgpdecryptresult_free: (a: number, b: number) => void;
+export const __wbg_pgpgeneratedkey_free: (a: number, b: number) => void;
+export const __wbg_pgpimportedkey_free: (a: number, b: number) => void;
+export const __wbg_pgppublickeyinfo_free: (a: number, b: number) => void;
 export const __wbg_privatekeys_free: (a: number, b: number) => void;
 export const __wbg_recoveryresult_free: (a: number, b: number) => void;
 export const computeSubjectHash: (a: number, b: number, c: number, d: number) => [number, number];
-export const decryptBundleWithRecovery: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-) => [number, number, number, number];
-export const decryptMessage: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-  e: number,
-  f: number,
-) => [number, number, number, number];
-export const decryptMetadata: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-) => [number, number, number, number];
-export const decryptPrivateKeys: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-) => [number, number, number];
-export const deriveMasterKey: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-) => [number, number, number, number];
-export const encryptBundleForRecovery: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-) => [number, number, number, number];
-export const encryptDraft: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-  e: number,
-  f: number,
-) => [number, number, number, number];
-export const encryptMessage: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-  e: number,
-  f: number,
-) => [number, number, number, number];
-export const encryptMetadata: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-) => [number, number, number, number];
+export const decryptBundleWithRecovery: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const decryptMessage: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const decryptMetadata: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const decryptPrivateKeys: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const deriveMasterKey: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const encryptBundleForRecovery: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const encryptDraft: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const encryptMessage: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const encryptMetadata: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const generateIdentityKeys: (a: number, b: number) => [number, number, number];
 export const generateRecoveryPhrase: () => number;
 export const generateSalt: () => [number, number];
@@ -72,29 +25,42 @@ export const hashRecoveryKey: (a: number, b: number) => [number, number];
 export const identitykeys_encryptedPrivateBundle: (a: number) => [number, number];
 export const identitykeys_mlkem768Public: (a: number) => [number, number];
 export const identitykeys_x25519Public: (a: number) => [number, number];
+export const pgpDecryptMessage: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const pgpEncryptToRecipients: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const pgpExportKey: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const pgpGenerateKey: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const pgpImportKey: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const pgpKeyInfo: (a: number, b: number) => [number, number, number];
+export const pgpdecryptresult_fingerprintUsed: (a: number) => [number, number];
+export const pgpdecryptresult_plaintext: (a: number) => [number, number];
+export const pgpgeneratedkey_armoredPublic: (a: number) => [number, number];
+export const pgpgeneratedkey_armoredSecret: (a: number) => [number, number];
+export const pgpgeneratedkey_fingerprint: (a: number) => [number, number];
+export const pgpgeneratedkey_primaryUid: (a: number) => [number, number];
+export const pgpimportedkey_armoredPublic: (a: number) => [number, number];
+export const pgpimportedkey_armoredSecret: (a: number) => [number, number];
+export const pgpimportedkey_createdAt: (a: number) => bigint;
+export const pgpimportedkey_expiresAt: (a: number) => [number, bigint];
+export const pgpimportedkey_fingerprint: (a: number) => [number, number];
+export const pgpimportedkey_isExpired: (a: number) => number;
+export const pgpimportedkey_isRevoked: (a: number) => number;
+export const pgpimportedkey_uids: (a: number) => [number, number];
+export const pgppublickeyinfo_canEncrypt: (a: number) => number;
+export const pgppublickeyinfo_fingerprint: (a: number) => [number, number];
+export const pgppublickeyinfo_isExpired: (a: number) => number;
+export const pgppublickeyinfo_isRevoked: (a: number) => number;
+export const pgppublickeyinfo_uids: (a: number) => [number, number];
 export const privatekeys_mlkem768Secret: (a: number) => [number, number];
 export const privatekeys_threadingKey: (a: number) => [number, number];
 export const privatekeys_x25519Secret: (a: number) => [number, number];
 export const recoveryKeyFromPhrase: (a: number, b: number) => [number, number, number, number];
 export const recoveryresult_phrase: (a: number) => [number, number];
 export const recoveryresult_recoveryKey: (a: number) => [number, number];
-export const sealForRecipient: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-  e: number,
-  f: number,
-) => [number, number, number, number];
-export const sealMetadataForRecipient: (
-  a: number,
-  b: number,
-  c: number,
-  d: number,
-  e: number,
-  f: number,
-) => [number, number, number, number];
+export const sealForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const sealMetadataForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
 export const start: () => void;
+export const pgppublickeyinfo_createdAt: (a: number) => bigint;
+export const pgppublickeyinfo_expiresAt: (a: number) => [number, bigint];
 export const __wbindgen_exn_store: (a: number) => void;
 export const __externref_table_alloc: () => number;
 export const __wbindgen_externrefs: WebAssembly.Table;
@@ -102,4 +68,5 @@ export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
 export const __externref_table_dealloc: (a: number) => void;
+export const __externref_drop_slice: (a: number, b: number) => void;
 export const __wbindgen_start: () => void;

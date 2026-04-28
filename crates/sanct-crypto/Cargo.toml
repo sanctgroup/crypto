@@ -16,6 +16,9 @@ zeroize = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+pgp = { workspace = true }
+chrono = { workspace = true }
+smallvec = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

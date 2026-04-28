@@ -1,0 +1,15 @@
+{
+  "name": "sanct-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "sanct_wasm_bg.wasm",
+    "sanct_wasm.js",
+    "sanct_wasm.d.ts"
+  ],
+  "main": "sanct_wasm.js",
+  "types": "sanct_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

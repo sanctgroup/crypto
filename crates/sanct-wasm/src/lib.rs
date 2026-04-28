@@ -214,6 +214,230 @@ pub fn decrypt_bundle_with_recovery(
     )?)
 }
 
+#[wasm_bindgen]
+pub struct PgpGeneratedKey {
+    pub(crate) armored_public: String,
+    pub(crate) armored_secret: String,
+    pub(crate) fingerprint: String,
+    pub(crate) primary_uid: String,
+}
+
+#[wasm_bindgen]
+impl PgpGeneratedKey {
+    #[wasm_bindgen(getter, js_name = "armoredPublic")]
+    pub fn armored_public(&self) -> String {
+        self.armored_public.clone()
+    }
+    #[wasm_bindgen(getter, js_name = "armoredSecret")]
+    pub fn armored_secret(&self) -> String {
+        self.armored_secret.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn fingerprint(&self) -> String {
+        self.fingerprint.clone()
+    }
+    #[wasm_bindgen(getter, js_name = "primaryUid")]
+    pub fn primary_uid(&self) -> String {
+        self.primary_uid.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub struct PgpImportedKey {
+    pub(crate) armored_secret: String,
+    pub(crate) armored_public: String,
+    pub(crate) fingerprint: String,
+    pub(crate) uids: Vec<String>,
+    pub(crate) created_at_unix: i64,
+    pub(crate) expires_at_unix: Option<i64>,
+    pub(crate) is_expired: bool,
+    pub(crate) is_revoked: bool,
+}
+
+#[wasm_bindgen]
+impl PgpImportedKey {
+    #[wasm_bindgen(getter, js_name = "armoredSecret")]
+    pub fn armored_secret(&self) -> String {
+        self.armored_secret.clone()
+    }
+    #[wasm_bindgen(getter, js_name = "armoredPublic")]
+    pub fn armored_public(&self) -> String {
+        self.armored_public.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn fingerprint(&self) -> String {
+        self.fingerprint.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn uids(&self) -> Vec<String> {
+        self.uids.clone()
+    }
+    #[wasm_bindgen(getter, js_name = "createdAt")]
+    pub fn created_at(&self) -> i64 {
+        self.created_at_unix
+    }
+    #[wasm_bindgen(getter, js_name = "expiresAt")]
+    pub fn expires_at(&self) -> Option<i64> {
+        self.expires_at_unix
+    }
+    #[wasm_bindgen(getter, js_name = "isExpired")]
+    pub fn is_expired(&self) -> bool {
+        self.is_expired
+    }
+    #[wasm_bindgen(getter, js_name = "isRevoked")]
+    pub fn is_revoked(&self) -> bool {
+        self.is_revoked
+    }
+}
+
+#[wasm_bindgen]
+pub struct PgpPublicKeyInfo {
+    pub(crate) fingerprint: String,
+    pub(crate) uids: Vec<String>,
+    pub(crate) created_at_unix: i64,
+    pub(crate) expires_at_unix: Option<i64>,
+    pub(crate) is_expired: bool,
+    pub(crate) is_revoked: bool,
+    pub(crate) can_encrypt: bool,
+}
+
+#[wasm_bindgen]
+impl PgpPublicKeyInfo {
+    #[wasm_bindgen(getter)]
+    pub fn fingerprint(&self) -> String {
+        self.fingerprint.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn uids(&self) -> Vec<String> {
+        self.uids.clone()
+    }
+    #[wasm_bindgen(getter, js_name = "createdAt")]
+    pub fn created_at(&self) -> i64 {
+        self.created_at_unix
+    }
+    #[wasm_bindgen(getter, js_name = "expiresAt")]
+    pub fn expires_at(&self) -> Option<i64> {
+        self.expires_at_unix
+    }
+    #[wasm_bindgen(getter, js_name = "isExpired")]
+    pub fn is_expired(&self) -> bool {
+        self.is_expired
+    }
+    #[wasm_bindgen(getter, js_name = "isRevoked")]
+    pub fn is_revoked(&self) -> bool {
+        self.is_revoked
+    }
+    #[wasm_bindgen(getter, js_name = "canEncrypt")]
+    pub fn can_encrypt(&self) -> bool {
+        self.can_encrypt
+    }
+}
+
+#[wasm_bindgen]
+pub struct PgpDecryptResult {
+    pub(crate) plaintext: Vec<u8>,
+    pub(crate) fingerprint_used: String,
+}
+
+#[wasm_bindgen]
+impl PgpDecryptResult {
+    #[wasm_bindgen(getter)]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+    #[wasm_bindgen(getter, js_name = "fingerprintUsed")]
+    pub fn fingerprint_used(&self) -> String {
+        self.fingerprint_used.clone()
+    }
+}
+
+fn pgp_to_jserror(e: sanct_crypto::pgp::PgpError) -> JsError {
+    use sanct_crypto::pgp::PgpError;
+    let code = match &e {
+        PgpError::Parse(_) => "parse",
+        PgpError::SmartcardStub => "smartcard_stub",
+        PgpError::PublicOnly => "public_only",
+        PgpError::BadPassphrase => "bad_passphrase",
+        PgpError::Generation(_) => "generation",
+        PgpError::Encryption(_) => "encryption",
+        PgpError::Decryption(_) => "decryption",
+        PgpError::Export(_) => "export",
+    };
+    JsError::new(&format!("{code}: {e}"))
+}
+
+#[wasm_bindgen(js_name = "pgpGenerateKey")]
+pub fn pgp_generate_key(name: &str, email: &str) -> Result<PgpGeneratedKey, JsError> {
+    let key = sanct_crypto::pgp::generate_key(name, email).map_err(pgp_to_jserror)?;
+    Ok(PgpGeneratedKey {
+        armored_public: key.armored_public,
+        armored_secret: key.armored_secret,
+        fingerprint: key.fingerprint,
+        primary_uid: key.primary_uid,
+    })
+}
+
+#[wasm_bindgen(js_name = "pgpImportKey")]
+pub fn pgp_import_key(
+    input: &[u8],
+    passphrase: Option<String>,
+) -> Result<PgpImportedKey, JsError> {
+    let imported = sanct_crypto::pgp::import_key(input, passphrase.as_deref())
+        .map_err(pgp_to_jserror)?;
+    Ok(PgpImportedKey {
+        armored_secret: imported.armored_secret_unprotected,
+        armored_public: imported.armored_public,
+        fingerprint: imported.fingerprint,
+        uids: imported.uids,
+        created_at_unix: imported.created_at_unix,
+        expires_at_unix: imported.expires_at_unix,
+        is_expired: imported.is_expired,
+        is_revoked: imported.is_revoked,
+    })
+}
+
+#[wasm_bindgen(js_name = "pgpExportKey")]
+pub fn pgp_export_key(unprotected_armored: &[u8], passphrase: &str) -> Result<String, JsError> {
+    sanct_crypto::pgp::export_key(unprotected_armored, passphrase).map_err(pgp_to_jserror)
+}
+
+#[wasm_bindgen(js_name = "pgpKeyInfo")]
+pub fn pgp_key_info(armored_public: &[u8]) -> Result<PgpPublicKeyInfo, JsError> {
+    let info = sanct_crypto::pgp::parse_public_info(armored_public).map_err(pgp_to_jserror)?;
+    Ok(PgpPublicKeyInfo {
+        fingerprint: info.fingerprint,
+        uids: info.uids,
+        created_at_unix: info.created_at_unix,
+        expires_at_unix: info.expires_at_unix,
+        is_expired: info.is_expired,
+        is_revoked: info.is_revoked,
+        can_encrypt: info.can_encrypt,
+    })
+}
+
+#[wasm_bindgen(js_name = "pgpEncryptToRecipients")]
+pub fn pgp_encrypt_to_recipients(
+    armored_publics: Vec<js_sys::Uint8Array>,
+    plaintext: &[u8],
+) -> Result<String, JsError> {
+    let publics: Vec<Vec<u8>> = armored_publics.iter().map(|a| a.to_vec()).collect();
+    sanct_crypto::pgp::encrypt_to_recipients(&publics, plaintext).map_err(pgp_to_jserror)
+}
+
+#[wasm_bindgen(js_name = "pgpDecryptMessage")]
+pub fn pgp_decrypt_message(
+    armored_secrets: Vec<js_sys::Uint8Array>,
+    armored_ciphertext: &[u8],
+) -> Result<PgpDecryptResult, JsError> {
+    let secrets: Vec<Vec<u8>> = armored_secrets.iter().map(|a| a.to_vec()).collect();
+    let res = sanct_crypto::pgp::decrypt_message(&secrets, armored_ciphertext)
+        .map_err(pgp_to_jserror)?;
+    Ok(PgpDecryptResult {
+        plaintext: res.plaintext,
+        fingerprint_used: res.fingerprint_used,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

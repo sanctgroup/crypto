@@ -2,6 +2,7 @@ pub mod envelope;
 pub mod hybrid;
 pub mod keys;
 pub mod password;
+pub mod pgp;
 pub mod recovery;
 pub mod symmetric;
 

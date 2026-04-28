@@ -4,6 +4,10 @@ export {
   type IdentityKeys,
   type PrivateKeys,
   type RecoveryResult,
+  type PgpGeneratedKey,
+  type PgpImportedKey,
+  type PgpPublicKeyInfo,
+  type PgpDecryptResult,
   generateSalt,
   deriveMasterKey,
   generateIdentityKeys,
@@ -21,7 +25,40 @@ export {
   hashRecoveryKey,
   encryptBundleForRecovery,
   decryptBundleWithRecovery,
+  pgpGenerateKey,
+  pgpImportKey,
+  pgpExportKey,
+  pgpKeyInfo,
+  pgpEncryptToRecipients,
+  pgpDecryptMessage,
 } from "../wasm/sanct_wasm.js";
+
+export type PgpImportFailureReason =
+  | "smartcard_stub"
+  | "public_only"
+  | "bad_passphrase"
+  | "parse"
+  | "encryption"
+  | "decryption"
+  | "generation"
+  | "export";
+
+export function classifyPgpError(message: string): PgpImportFailureReason | "unknown" {
+  const code = message.split(":", 1)[0]?.trim();
+  switch (code) {
+    case "smartcard_stub":
+    case "public_only":
+    case "bad_passphrase":
+    case "parse":
+    case "encryption":
+    case "decryption":
+    case "generation":
+    case "export":
+      return code;
+    default:
+      return "unknown";
+  }
+}
 
 export interface UnlockedKeys {
   readonly x25519Secret: Uint8Array;
