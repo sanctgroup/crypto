@@ -378,12 +378,9 @@ pub fn pgp_generate_key(name: &str, email: &str) -> Result<PgpGeneratedKey, JsEr
 }
 
 #[wasm_bindgen(js_name = "pgpImportKey")]
-pub fn pgp_import_key(
-    input: &[u8],
-    passphrase: Option<String>,
-) -> Result<PgpImportedKey, JsError> {
-    let imported = sanct_crypto::pgp::import_key(input, passphrase.as_deref())
-        .map_err(pgp_to_jserror)?;
+pub fn pgp_import_key(input: &[u8], passphrase: Option<String>) -> Result<PgpImportedKey, JsError> {
+    let imported =
+        sanct_crypto::pgp::import_key(input, passphrase.as_deref()).map_err(pgp_to_jserror)?;
     Ok(PgpImportedKey {
         armored_secret: imported.armored_secret_unprotected,
         armored_public: imported.armored_public,
@@ -430,8 +427,8 @@ pub fn pgp_decrypt_message(
     armored_ciphertext: &[u8],
 ) -> Result<PgpDecryptResult, JsError> {
     let secrets: Vec<Vec<u8>> = armored_secrets.iter().map(|a| a.to_vec()).collect();
-    let res = sanct_crypto::pgp::decrypt_message(&secrets, armored_ciphertext)
-        .map_err(pgp_to_jserror)?;
+    let res =
+        sanct_crypto::pgp::decrypt_message(&secrets, armored_ciphertext).map_err(pgp_to_jserror)?;
     Ok(PgpDecryptResult {
         plaintext: res.plaintext,
         fingerprint_used: res.fingerprint_used,

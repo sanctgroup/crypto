@@ -1,0 +1,173 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semver version to release (e.g. 1.2.3, no leading v)'
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: validate inputs
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      tag: ${{ steps.parse.outputs.tag }}
+      url: ${{ steps.parse.outputs.url }}
+    steps:
+      - id: parse
+        run: |
+          v="${{ inputs.version }}"
+          if [[ ! "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::version must be semver like 1.2.3 (no leading v)"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "tag=v$v" >> "$GITHUB_OUTPUT"
+          echo "url=https://github.com/${{ github.repository }}/releases/download/v$v/SanctCryptoFFI.xcframework.zip" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+      - name: Ensure tag is unused
+        run: |
+          if git ls-remote --tags --exit-code origin "refs/tags/v${{ inputs.version }}"; then
+            echo "::error::tag v${{ inputs.version }} already exists"; exit 1
+          fi
+
+  build-wasm:
+    name: build wasm
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/build-wasm.sh
+      - name: Tar wasm bundle
+        run: tar -czf sanct-crypto-wasm.tar.gz -C wasm .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wasm
+          path: sanct-crypto-wasm.tar.gz
+          retention-days: 1
+
+  build-xcframework:
+    name: build xcframework
+    needs: validate
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/build-swift.sh
+      - name: Zip xcframework
+        working-directory: swift
+        run: |
+          rm -f SanctCryptoFFI.xcframework.zip
+          ditto -c -k --keepParent SanctCryptoFFI.xcframework SanctCryptoFFI.xcframework.zip
+      - name: Compute SPM checksum
+        id: checksum
+        working-directory: swift
+        run: |
+          sum=$(swift package compute-checksum SanctCryptoFFI.xcframework.zip)
+          echo "checksum=$sum" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xcframework
+          path: swift/SanctCryptoFFI.xcframework.zip
+          retention-days: 1
+      - name: Emit checksum
+        run: echo "${{ steps.checksum.outputs.checksum }}" > checksum.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xcframework-checksum
+          path: checksum.txt
+          retention-days: 1
+
+  release:
+    name: tag & publish
+    needs: [validate, build-wasm, build-xcframework]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: xcframework-checksum
+          path: ./_artifacts/checksum
+      - uses: actions/download-artifact@v4
+        with:
+          name: xcframework
+          path: ./_artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: wasm
+          path: ./_artifacts
+
+      - name: Update Package.swift
+        env:
+          RELEASE_URL: ${{ needs.validate.outputs.url }}
+        run: |
+          export RELEASE_CHECKSUM=$(cat ./_artifacts/checksum/checksum.txt)
+          python3 - <<'PY'
+          import os, re, pathlib
+          p = pathlib.Path("swift/Package.swift")
+          s = p.read_text()
+          s = re.sub(r'let releaseURL = "[^"]*"', f'let releaseURL = "{os.environ["RELEASE_URL"]}"', s)
+          s = re.sub(r'let releaseChecksum = "[^"]*"', f'let releaseChecksum = "{os.environ["RELEASE_CHECKSUM"]}"', s)
+          p.write_text(s)
+          PY
+
+      - name: Bump crate versions
+        run: |
+          v="${{ needs.validate.outputs.version }}"
+          for f in crates/sanct-crypto/Cargo.toml crates/sanct-wasm/Cargo.toml crates/sanct-swift/Cargo.toml; do
+            sed -i -E "0,/^version = \"[^\"]+\"/{s//version = \"$v\"/}" "$f"
+          done
+          if [ -f package.json ]; then
+            python3 -c "import json,pathlib; p=pathlib.Path('package.json'); d=json.loads(p.read_text()); d['version']='${v}'; p.write_text(json.dumps(d, indent=2)+'\n')"
+          fi
+
+      - name: Refresh wasm/ from build artifact
+        run: |
+          rm -rf wasm
+          mkdir -p wasm
+          tar -xzf ./_artifacts/sanct-crypto-wasm.tar.gz -C wasm
+
+      - name: Commit, tag, push
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add swift/Package.swift crates/*/Cargo.toml package.json wasm 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "release: ${TAG}"
+            git push origin HEAD:main
+          fi
+          git tag -a "${TAG}" -m "${TAG}"
+          git push origin "${TAG}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          gh release create "${TAG}" \
+            --title "${TAG}" \
+            --generate-notes \
+            ./_artifacts/SanctCryptoFFI.xcframework.zip \
+            ./_artifacts/sanct-crypto-wasm.tar.gz

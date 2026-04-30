@@ -91,10 +91,7 @@ pub fn generate_key(name: &str, email: &str) -> Result<GeneratedKey, PgpError> {
             SymmetricKeyAlgorithm::AES192,
             SymmetricKeyAlgorithm::AES128,
         ])
-        .preferred_hash_algorithms(smallvec![
-            HashAlgorithm::SHA2_256,
-            HashAlgorithm::SHA2_512,
-        ])
+        .preferred_hash_algorithms(smallvec![HashAlgorithm::SHA2_256, HashAlgorithm::SHA2_512,])
         .preferred_compression_algorithms(smallvec![
             CompressionAlgorithm::ZLIB,
             CompressionAlgorithm::ZIP,
@@ -105,7 +102,7 @@ pub fn generate_key(name: &str, email: &str) -> Result<GeneratedKey, PgpError> {
 
     let mut rng = OsRng;
     let secret = params
-        .generate(&mut rng)
+        .generate(rng)
         .map_err(|e| PgpError::Generation(e.to_string()))?;
     let signed_secret = secret
         .sign(&mut rng, String::new)
@@ -200,13 +197,15 @@ pub fn import_key(input: &[u8], passphrase: Option<&str>) -> Result<ImportedKey,
 
 pub fn export_key(unprotected_armored: &[u8], passphrase: &str) -> Result<String, PgpError> {
     if passphrase.is_empty() {
-        return Err(PgpError::Export("export passphrase must not be empty".into()));
+        return Err(PgpError::Export(
+            "export passphrase must not be empty".into(),
+        ));
     }
     let mut signed = parse_secret(unprotected_armored)?;
-    let mut rng = OsRng;
+    let rng = OsRng;
 
     let key_version = signed.primary_key.version();
-    let s2k = S2kParams::new_default(&mut rng, key_version);
+    let s2k = S2kParams::new_default(rng, key_version);
     let pw_primary = passphrase.to_string();
     signed
         .primary_key
@@ -214,7 +213,7 @@ pub fn export_key(unprotected_armored: &[u8], passphrase: &str) -> Result<String
         .map_err(|e| PgpError::Export(e.to_string()))?;
 
     for subkey in signed.secret_subkeys.iter_mut() {
-        let sub_s2k = S2kParams::new_default(&mut rng, key_version);
+        let sub_s2k = S2kParams::new_default(rng, key_version);
         let pw_sub = passphrase.to_string();
         subkey
             .key
@@ -286,11 +285,13 @@ pub fn encrypt_to_recipients(
         encryption_subkeys.push(subkey);
     }
 
-    let pkeys: Vec<&pgp::SignedPublicSubKey> = encryption_subkeys.iter().copied().collect();
-
     let msg = Message::new_literal_bytes(b"" as &[u8], plaintext);
     let encrypted = msg
-        .encrypt_to_keys_seipdv1(&mut OsRng, SymmetricKeyAlgorithm::AES256, &pkeys)
+        .encrypt_to_keys_seipdv1(
+            &mut OsRng,
+            SymmetricKeyAlgorithm::AES256,
+            &encryption_subkeys,
+        )
         .map_err(|e| PgpError::Encryption(e.to_string()))?;
 
     encrypted
@@ -357,8 +358,7 @@ fn parse_secret(input: &[u8]) -> Result<SignedSecretKey, PgpError> {
             .map(|(k, _)| k)
             .map_err(|e| PgpError::Parse(e.to_string()))
     } else {
-        SignedSecretKey::from_bytes(Cursor::new(input))
-            .map_err(|e| PgpError::Parse(e.to_string()))
+        SignedSecretKey::from_bytes(Cursor::new(input)).map_err(|e| PgpError::Parse(e.to_string()))
     }
 }
 
@@ -369,8 +369,7 @@ fn parse_public(input: &[u8]) -> Result<SignedPublicKey, PgpError> {
             .map(|(k, _)| k)
             .map_err(|e| PgpError::Parse(e.to_string()))
     } else {
-        SignedPublicKey::from_bytes(Cursor::new(input))
-            .map_err(|e| PgpError::Parse(e.to_string()))
+        SignedPublicKey::from_bytes(Cursor::new(input)).map_err(|e| PgpError::Parse(e.to_string()))
     }
 }
 
@@ -493,11 +492,8 @@ mod tests {
         assert_eq!(key.primary_uid, "Alice <alice@sanct.local>");
 
         let plaintext = b"sealed by pgp";
-        let armored = encrypt_to_recipients(
-            &[key.armored_public.as_bytes().to_vec()],
-            plaintext,
-        )
-        .expect("encrypt");
+        let armored = encrypt_to_recipients(&[key.armored_public.as_bytes().to_vec()], plaintext)
+            .expect("encrypt");
 
         let decrypted = decrypt_message(
             &[key.armored_secret.as_bytes().to_vec()],
@@ -521,15 +517,13 @@ mod tests {
     #[test]
     fn export_then_reimport_with_passphrase() {
         let gen = generate_key("Carol", "carol@sanct.local").expect("gen");
-        let exported =
-            export_key(gen.armored_secret.as_bytes(), "correct horse").expect("export");
+        let exported = export_key(gen.armored_secret.as_bytes(), "correct horse").expect("export");
         assert!(exported.contains("BEGIN PGP PRIVATE KEY BLOCK"));
 
         let bad = import_key(exported.as_bytes(), Some("wrong"));
         assert!(matches!(bad, Err(PgpError::BadPassphrase)));
 
-        let imported =
-            import_key(exported.as_bytes(), Some("correct horse")).expect("reimport");
+        let imported = import_key(exported.as_bytes(), Some("correct horse")).expect("reimport");
         assert_eq!(imported.fingerprint, gen.fingerprint);
     }
 

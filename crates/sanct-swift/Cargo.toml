@@ -1,0 +1,21 @@
+[package]
+name = "sanct-swift"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+name = "sanct_swift"
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[dependencies]
+sanct-crypto = { path = "../sanct-crypto" }
+uniffi = { version = "0.28", features = ["cli"] }
+thiserror = { workspace = true }
+
+[build-dependencies]
+uniffi = { version = "0.28", features = ["build"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"

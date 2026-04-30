@@ -1,3 +1,12 @@
 target/
 Cargo.lock
 node_modules/
+
+swift/.build/
+swift/SanctCryptoFFI.xcframework/
+swift/SanctCryptoFFI.xcframework.zip
+swift/.swiftpm/
+swift/Package.resolved
+swift/DerivedData/
+**/*.xcuserstate
+**/xcuserdata/
