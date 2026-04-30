@@ -179,11 +179,11 @@ export interface InitOutput {
     readonly recoveryKeyFromPhrase: (a: number, b: number) => [number, number, number, number];
     readonly recoveryresult_phrase: (a: number) => [number, number];
     readonly recoveryresult_recoveryKey: (a: number) => [number, number];
-    readonly sealForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly sealMetadataForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly pgppublickeyinfo_expiresAt: (a: number) => [number, bigint];
     readonly start: () => void;
     readonly pgppublickeyinfo_createdAt: (a: number) => bigint;
-    readonly pgppublickeyinfo_expiresAt: (a: number) => [number, bigint];
+    readonly sealForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly sealMetadataForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

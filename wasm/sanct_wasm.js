@@ -2,7 +2,6 @@
 
 export class IdentityKeys {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(IdentityKeys.prototype);
         obj.__wbg_ptr = ptr;
         IdentityKeysFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -50,7 +49,6 @@ if (Symbol.dispose) IdentityKeys.prototype[Symbol.dispose] = IdentityKeys.protot
 
 export class PgpDecryptResult {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(PgpDecryptResult.prototype);
         obj.__wbg_ptr = ptr;
         PgpDecryptResultFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -95,7 +93,6 @@ if (Symbol.dispose) PgpDecryptResult.prototype[Symbol.dispose] = PgpDecryptResul
 
 export class PgpGeneratedKey {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(PgpGeneratedKey.prototype);
         obj.__wbg_ptr = ptr;
         PgpGeneratedKeyFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -176,7 +173,6 @@ if (Symbol.dispose) PgpGeneratedKey.prototype[Symbol.dispose] = PgpGeneratedKey.
 
 export class PgpImportedKey {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(PgpImportedKey.prototype);
         obj.__wbg_ptr = ptr;
         PgpImportedKeyFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -279,7 +275,6 @@ if (Symbol.dispose) PgpImportedKey.prototype[Symbol.dispose] = PgpImportedKey.pr
 
 export class PgpPublicKeyInfo {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(PgpPublicKeyInfo.prototype);
         obj.__wbg_ptr = ptr;
         PgpPublicKeyInfoFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -359,7 +354,6 @@ if (Symbol.dispose) PgpPublicKeyInfo.prototype[Symbol.dispose] = PgpPublicKeyInf
 
 export class PrivateKeys {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(PrivateKeys.prototype);
         obj.__wbg_ptr = ptr;
         PrivateKeysFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -407,7 +401,6 @@ if (Symbol.dispose) PrivateKeys.prototype[Symbol.dispose] = PrivateKeys.prototyp
 
 export class RecoveryResult {
     static __wrap(ptr) {
-        ptr = ptr >>> 0;
         const obj = Object.create(RecoveryResult.prototype);
         obj.__wbg_ptr = ptr;
         RecoveryResultFinalization.register(obj, obj.__wbg_ptr, obj);
@@ -873,35 +866,34 @@ export function sealMetadataForRecipient(recipient_x25519_pub, recipient_mlkem_p
 export function start() {
     wasm.start();
 }
-
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_Error_2e59b1b37a9a34c3: function(arg0, arg1) {
+        __wbg_Error_3639a60ed15f87e7: function(arg0, arg1) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return ret;
         },
-        __wbg___wbindgen_is_function_49868bde5eb1e745: function(arg0) {
+        __wbg___wbindgen_is_function_2f0fd7ceb86e64c5: function(arg0) {
             const ret = typeof(arg0) === 'function';
             return ret;
         },
-        __wbg___wbindgen_is_object_40c5a80572e8f9d3: function(arg0) {
+        __wbg___wbindgen_is_object_5b22ff2418063a9c: function(arg0) {
             const val = arg0;
             const ret = typeof(val) === 'object' && val !== null;
             return ret;
         },
-        __wbg___wbindgen_is_string_b29b5c5a8065ba1a: function(arg0) {
+        __wbg___wbindgen_is_string_eddc07a3efad52e6: function(arg0) {
             const ret = typeof(arg0) === 'string';
             return ret;
         },
-        __wbg___wbindgen_is_undefined_c0cca72b82b86f4d: function(arg0) {
+        __wbg___wbindgen_is_undefined_244a92c34d3b6ec0: function(arg0) {
             const ret = arg0 === undefined;
             return ret;
         },
-        __wbg___wbindgen_throw_81fc77679af83bc6: function(arg0, arg1) {
+        __wbg___wbindgen_throw_9c75d47bf9e7731e: function(arg0, arg1) {
             throw new Error(getStringFromWasm0(arg0, arg1));
         },
-        __wbg_call_d578befcc3145dee: function() { return handleError(function (arg0, arg1, arg2) {
+        __wbg_call_a41d6421b30a32c5: function() { return handleError(function (arg0, arg1, arg2) {
             const ret = arg0.call(arg1, arg2);
             return ret;
         }, arguments); },
@@ -923,11 +915,11 @@ function __wbg_get_imports() {
         __wbg_getRandomValues_c44a50d8cfdaebeb: function() { return handleError(function (arg0, arg1) {
             arg0.getRandomValues(arg1);
         }, arguments); },
-        __wbg_getTime_f6ac312467f7cf09: function(arg0) {
+        __wbg_getTime_e599bee315e19eba: function(arg0) {
             const ret = arg0.getTime();
             return ret;
         },
-        __wbg_length_0c32cb8543c8e4c8: function(arg0) {
+        __wbg_length_ba3c032602efe310: function(arg0) {
             const ret = arg0.length;
             return ret;
         },
@@ -935,7 +927,7 @@ function __wbg_get_imports() {
             const ret = arg0.msCrypto;
             return ret;
         },
-        __wbg_new_0_bfa2ef4bc447daa2: function() {
+        __wbg_new_0_e486ec9936f7edbf: function() {
             const ret = new Date();
             return ret;
         },
@@ -943,7 +935,7 @@ function __wbg_get_imports() {
             const ret = new Error();
             return ret;
         },
-        __wbg_new_with_length_9cedd08484b73942: function(arg0) {
+        __wbg_new_with_length_9011f5da794bf5d9: function(arg0) {
             const ret = new Uint8Array(arg0 >>> 0);
             return ret;
         },
@@ -955,7 +947,7 @@ function __wbg_get_imports() {
             const ret = arg0.process;
             return ret;
         },
-        __wbg_prototypesetcall_3e05eb9545565046: function(arg0, arg1, arg2) {
+        __wbg_prototypesetcall_fd4050e806e1d519: function(arg0, arg1, arg2) {
             Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
         },
         __wbg_randomFillSync_6c25eac9869eb53c: function() { return handleError(function (arg0, arg1) {
@@ -972,23 +964,23 @@ function __wbg_get_imports() {
             getDataViewMemory0().setInt32(arg0 + 4 * 1, len1, true);
             getDataViewMemory0().setInt32(arg0 + 4 * 0, ptr1, true);
         },
-        __wbg_static_accessor_GLOBAL_THIS_a1248013d790bf5f: function() {
+        __wbg_static_accessor_GLOBAL_THIS_1c7f1bd6c6941fdb: function() {
             const ret = typeof globalThis === 'undefined' ? null : globalThis;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_static_accessor_GLOBAL_f2e0f995a21329ff: function() {
+        __wbg_static_accessor_GLOBAL_e039bc914f83e74e: function() {
             const ret = typeof global === 'undefined' ? null : global;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_static_accessor_SELF_24f78b6d23f286ea: function() {
+        __wbg_static_accessor_SELF_8bf8c48c28420ad5: function() {
             const ret = typeof self === 'undefined' ? null : self;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_static_accessor_WINDOW_59fd959c540fe405: function() {
+        __wbg_static_accessor_WINDOW_6aeee9b51652ee0f: function() {
             const ret = typeof window === 'undefined' ? null : window;
             return isLikeNone(ret) ? 0 : addToExternrefTable0(ret);
         },
-        __wbg_subarray_0f98d3fb634508ad: function(arg0, arg1, arg2) {
+        __wbg_subarray_fbe3cef290e1fa43: function(arg0, arg1, arg2) {
             const ret = arg0.subarray(arg1 >>> 0, arg2 >>> 0);
             return ret;
         },
@@ -1024,25 +1016,25 @@ function __wbg_get_imports() {
 
 const IdentityKeysFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_identitykeys_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_identitykeys_free(ptr, 1));
 const PgpDecryptResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_pgpdecryptresult_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_pgpdecryptresult_free(ptr, 1));
 const PgpGeneratedKeyFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_pgpgeneratedkey_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_pgpgeneratedkey_free(ptr, 1));
 const PgpImportedKeyFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_pgpimportedkey_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_pgpimportedkey_free(ptr, 1));
 const PgpPublicKeyInfoFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_pgppublickeyinfo_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_pgppublickeyinfo_free(ptr, 1));
 const PrivateKeysFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_privatekeys_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_privatekeys_free(ptr, 1));
 const RecoveryResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_recoveryresult_free(ptr >>> 0, 1));
+    : new FinalizationRegistry(ptr => wasm.__wbg_recoveryresult_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();
@@ -1075,8 +1067,7 @@ function getDataViewMemory0() {
 }
 
 function getStringFromWasm0(ptr, len) {
-    ptr = ptr >>> 0;
-    return decodeText(ptr, len);
+    return decodeText(ptr >>> 0, len);
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -1189,8 +1180,9 @@ if (!('encodeInto' in cachedTextEncoder)) {
 
 let WASM_VECTOR_LEN = 0;
 
-let wasmModule, wasm;
+let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {
+    wasmInstance = instance;
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
