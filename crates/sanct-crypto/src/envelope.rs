@@ -2,7 +2,8 @@ use crate::hybrid;
 use crate::symmetric;
 use crate::CryptoError;
 
-const ENVELOPE_VERSION: u8 = 1;
+const ENVELOPE_VERSION: u8 = 2;
+const ENVELOPE_VERSION_LEGACY_V1: u8 = 1;
 const X25519_PUB_LEN: usize = 32;
 const HEADER_LEN: usize = 1 + X25519_PUB_LEN + hybrid::MLKEM_CIPHERTEXT_LEN;
 
@@ -36,16 +37,21 @@ impl SealedEnvelope {
         x25519_private: &[u8],
         mlkem_private: &[u8],
     ) -> Result<Vec<u8>, CryptoError> {
-        if self.version != ENVELOPE_VERSION {
-            return Err(CryptoError::UnsupportedVersion(self.version));
-        }
-
-        let shared_secret = hybrid::decapsulate(
-            x25519_private,
-            mlkem_private,
-            &self.x25519_ephemeral_public,
-            &self.mlkem_ciphertext,
-        )?;
+        let shared_secret = match self.version {
+            ENVELOPE_VERSION => hybrid::decapsulate(
+                x25519_private,
+                mlkem_private,
+                &self.x25519_ephemeral_public,
+                &self.mlkem_ciphertext,
+            )?,
+            ENVELOPE_VERSION_LEGACY_V1 => hybrid::decapsulate_v1(
+                x25519_private,
+                mlkem_private,
+                &self.x25519_ephemeral_public,
+                &self.mlkem_ciphertext,
+            )?,
+            _ => return Err(CryptoError::UnsupportedVersion(self.version)),
+        };
 
         symmetric::decrypt(&shared_secret, &self.encrypted_payload)
     }
@@ -211,5 +217,112 @@ mod tests {
             mlkem_kp.decapsulation_key.as_bytes().as_slice(),
         );
         assert!(matches!(result, Err(CryptoError::UnsupportedVersion(99))));
+    }
+
+    #[test]
+    fn current_envelopes_emit_v2() {
+        let x25519_kp = X25519KeyPair::generate();
+        let mlkem_kp = MlKemKeyPair::generate();
+        let sealed = SealedEnvelope::seal(
+            x25519_kp.public.as_bytes(),
+            mlkem_kp.encapsulation_key.as_bytes().as_slice(),
+            b"hi",
+        )
+        .unwrap();
+        assert_eq!(sealed.version, ENVELOPE_VERSION);
+        assert_eq!(ENVELOPE_VERSION, 2);
+    }
+
+    #[test]
+    fn swapping_x25519_ephemeral_breaks_decap() {
+        let recipient_x = X25519KeyPair::generate();
+        let recipient_m = MlKemKeyPair::generate();
+
+        let sealed = SealedEnvelope::seal(
+            recipient_x.public.as_bytes(),
+            recipient_m.encapsulation_key.as_bytes().as_slice(),
+            b"transcript binding test",
+        )
+        .unwrap();
+
+        let other_eph = x25519_dalek::PublicKey::from(
+            &x25519_dalek::EphemeralSecret::random_from_rng(rand::rngs::OsRng),
+        );
+        let mut tampered = SealedEnvelope {
+            version: sealed.version,
+            x25519_ephemeral_public: other_eph.to_bytes(),
+            mlkem_ciphertext: sealed.mlkem_ciphertext,
+            encrypted_payload: sealed.encrypted_payload.clone(),
+        };
+        tampered.x25519_ephemeral_public = other_eph.to_bytes();
+        let result = tampered.open(
+            recipient_x.secret.as_bytes(),
+            recipient_m.decapsulation_key.as_bytes().as_slice(),
+        );
+        assert!(result.is_err(), "tampered eph_pub should fail to decrypt");
+    }
+
+    #[test]
+    fn flipping_mlkem_ciphertext_breaks_decap() {
+        let recipient_x = X25519KeyPair::generate();
+        let recipient_m = MlKemKeyPair::generate();
+
+        let sealed = SealedEnvelope::seal(
+            recipient_x.public.as_bytes(),
+            recipient_m.encapsulation_key.as_bytes().as_slice(),
+            b"transcript binding test",
+        )
+        .unwrap();
+
+        let mut tampered = SealedEnvelope {
+            version: sealed.version,
+            x25519_ephemeral_public: sealed.x25519_ephemeral_public,
+            mlkem_ciphertext: sealed.mlkem_ciphertext,
+            encrypted_payload: sealed.encrypted_payload.clone(),
+        };
+        tampered.mlkem_ciphertext[0] ^= 0x01;
+        let result = tampered.open(
+            recipient_x.secret.as_bytes(),
+            recipient_m.decapsulation_key.as_bytes().as_slice(),
+        );
+        assert!(result.is_err(), "tampered mlkem_ct should fail to decrypt");
+    }
+
+    #[test]
+    fn v1_envelopes_still_decap_with_legacy_path() {
+        use crate::hybrid;
+
+        let recipient_x = X25519KeyPair::generate();
+        let recipient_m = MlKemKeyPair::generate();
+
+        let encap = hybrid::encapsulate(
+            recipient_x.public.as_bytes(),
+            recipient_m.encapsulation_key.as_bytes().as_slice(),
+        )
+        .unwrap();
+
+        let v1_shared = hybrid::decapsulate_v1(
+            recipient_x.secret.as_bytes(),
+            recipient_m.decapsulation_key.as_bytes().as_slice(),
+            &encap.x25519_ephemeral_public,
+            &encap.mlkem_ciphertext,
+        )
+        .unwrap();
+        let v1_payload = symmetric::encrypt(&v1_shared, b"legacy v1 message").unwrap();
+
+        let v1_envelope = SealedEnvelope {
+            version: ENVELOPE_VERSION_LEGACY_V1,
+            x25519_ephemeral_public: encap.x25519_ephemeral_public,
+            mlkem_ciphertext: encap.mlkem_ciphertext,
+            encrypted_payload: v1_payload,
+        };
+
+        let plaintext = v1_envelope
+            .open(
+                recipient_x.secret.as_bytes(),
+                recipient_m.decapsulation_key.as_bytes().as_slice(),
+            )
+            .unwrap();
+        assert_eq!(plaintext.as_slice(), b"legacy v1 message");
     }
 }
