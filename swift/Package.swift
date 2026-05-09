@@ -5,8 +5,8 @@ import PackageDescription
 //   1. Build & zip: ./scripts/build-swift.sh <tag>
 //   2. Upload swift/SanctCryptoFFI.xcframework.zip to GitHub release <tag>
 //   3. The script rewrites the url + checksum below.
-let releaseURL = "https://github.com/sanctgroup/crypto/releases/download/v0.1.0/SanctCryptoFFI.xcframework.zip"
-let releaseChecksum = "654bd560105c32ceb738ad36cbb1d8aaf2f870db6a572a7faaa94e6505191177"
+let releaseURL = "https://github.com/sanctgroup/crypto/releases/download/v0.2.0/SanctCryptoFFI.xcframework.zip"
+let releaseChecksum = "400a6f38d26464e95ceafa915f6c4ed9d29f72157e302713ee9c33330e3c64dd"
 
 let package = Package(
     name: "SanctCrypto",
