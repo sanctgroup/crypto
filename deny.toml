@@ -8,11 +8,6 @@ ignore = [
     # the `pgp` crate. No upstream fix available; mitigation is to avoid using
     # RSA in network-observable timing contexts (we use it only locally).
     "RUSTSEC-2023-0071",
-    # `paste` is unmaintained. Pulled in transitively by uniffi 0.28.
-    "RUSTSEC-2024-0436",
-    # `bincode 1.x` unmaintained (development ceased upstream). Pulled in by
-    # uniffi_macros 0.28.
-    "RUSTSEC-2025-0141",
 ]
 
 [licenses]
