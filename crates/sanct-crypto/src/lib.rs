@@ -14,6 +14,9 @@ pub enum CryptoError {
     #[error("Invalid key length: {0}")]
     InvalidKeyLength(usize),
 
+    #[error("Invalid public key")]
+    InvalidPublicKey,
+
     #[error("Key derivation error: {0}")]
     KeyDerivation(String),
 

@@ -1,0 +1,42 @@
+{
+  "database": {
+    "advisory-count": 1395,
+    "last-commit": "2295466c4e9df26647fd67d8fa1c705ac2fc7f81",
+    "last-updated": "2026-10-30T12:12:39+01:00"
+  },
+  "vulnerabilities": [
+    {
+      "id": "RUSTSEC-2026-0387",
+      "package": "crypto-bigint",
+      "version": "0.5.5",
+      "title": "Multiple timing variability issues in operations intended to be constant-time",
+      "patched": [
+        ">=0.7.6"
+      ]
+    },
+    {
+      "id": "RUSTSEC-2023-0071",
+      "package": "rsa",
+      "version": "0.9.10",
+      "title": "Marvin Attack: potential key recovery through timing sidechannels",
+      "patched": []
+    }
+  ],
+  "warnings": {
+    "yanked": [
+      {
+        "kind": "yanked",
+        "package": {
+          "name": "spin",
+          "version": "0.9.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "checksum": "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67",
+          "replace": null
+        },
+        "advisory": null,
+        "affected": null,
+        "versions": null
+      }
+    ]
+  }
+}

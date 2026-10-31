@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUT_DIR="$ROOT_DIR/wasm"
 
-WASM_PACK_VERSION="0.13.1"
+WASM_PACK_VERSION="0.15.1"
 
 needs_install=true
 if command -v wasm-pack &>/dev/null; then
@@ -25,7 +25,9 @@ echo "Building sanct-wasm for web..."
 wasm-pack build \
     --target web \
     --out-dir "$OUT_DIR" \
-    "$ROOT_DIR/crates/sanct-wasm"
+    "$ROOT_DIR/crates/sanct-wasm" -- --locked
+
+node "$ROOT_DIR/scripts/harden-bindings.mjs" "$OUT_DIR/sanct_wasm.js"
 
 rm -f "$OUT_DIR/.gitignore"
 

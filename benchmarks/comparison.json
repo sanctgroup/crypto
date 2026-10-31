@@ -1,0 +1,415 @@
+{
+  "baselineCommit": "a997affdad0d6734f01c2506fbb26165a21dc376",
+  "baselineRuns": [
+    "baseline.json",
+    "baseline-repeat.json",
+    "baseline-final.json"
+  ],
+  "finalRuns": [
+    "final.json",
+    "final-repeat.json"
+  ],
+  "aggregation": "median of per-run median batch latencies; 3 baseline and 2 final runs",
+  "compiler": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "wasmPack": "wasm-pack 0.13.1",
+  "cargoLockSha256": "f057e68fc92b18dafb58d9470561adbbac311a7840b297982adfa3bd928f3dbf",
+  "baselineWasmBytes": 2187506,
+  "finalWasmBytes": 2056906,
+  "baselineGzipBytes": 730996,
+  "finalGzipBytes": 716004,
+  "finalWasmSha256": "01f3e3d635520f8f6f46f7ba31c8558c98a805764321dd528c02f04f9cf461fa",
+  "rows": [
+    {
+      "name": "deriveMasterKey/64MiB,t=3,p=1",
+      "baselineMedianMs": 85.86016699999999,
+      "finalMedianMs": 93.82122950000002,
+      "latencyChangePercent": 9.27212557133743,
+      "baselineRunRangeMs": [
+        83.38795799999997,
+        86.31725
+      ],
+      "finalRunRangeMs": [
+        92.52824999999996,
+        95.11420900000007
+      ]
+    },
+    {
+      "name": "generateIdentityKeys",
+      "baselineMedianMs": 0.08480289453125023,
+      "finalMedianMs": 0.08669246289062471,
+      "latencyChangePercent": 2.2281885185866823,
+      "baselineRunRangeMs": [
+        0.08466894531250002,
+        0.08524544140624979
+      ],
+      "finalRunRangeMs": [
+        0.08566145703124928,
+        0.08772346875000014
+      ]
+    },
+    {
+      "name": "decryptPrivateKeys",
+      "baselineMedianMs": 0.04304304882812504,
+      "finalMedianMs": 0.039611531250000054,
+      "latencyChangePercent": -7.972292092568445,
+      "baselineRunRangeMs": [
+        0.04225821875000024,
+        0.0434314785156249
+      ],
+      "finalRunRangeMs": [
+        0.03917805859375001,
+        0.0400450039062501
+      ]
+    },
+    {
+      "name": "computeSubjectHash",
+      "baselineMedianMs": 0.0006576067810058622,
+      "finalMedianMs": 0.0006476306762695332,
+      "latencyChangePercent": -1.5170319139759858,
+      "baselineRunRangeMs": [
+        0.0006516609191894521,
+        0.0006618105468750024
+      ],
+      "finalRunRangeMs": [
+        0.0006386057434082035,
+        0.0006566556091308628
+      ]
+    },
+    {
+      "name": "generateRecoveryPhrase",
+      "baselineMedianMs": 0.002499460815429705,
+      "finalMedianMs": 0.002487602233886721,
+      "latencyChangePercent": -0.47444558721538854,
+      "baselineRunRangeMs": [
+        0.0024972229003906166,
+        0.0025177358398437433
+      ],
+      "finalRunRangeMs": [
+        0.0024626414794921836,
+        0.0025125629882812583
+      ]
+    },
+    {
+      "name": "encryptMetadata/0",
+      "baselineMedianMs": 0.0005788497924804764,
+      "finalMedianMs": 0.0005758775177001976,
+      "latencyChangePercent": -0.5134794585555658,
+      "baselineRunRangeMs": [
+        0.0005786564941406211,
+        0.0005822232360839785
+      ],
+      "finalRunRangeMs": [
+        0.0005673612060546895,
+        0.0005843938293457057
+      ]
+    },
+    {
+      "name": "decryptMetadata/0",
+      "baselineMedianMs": 0.0002852172851562501,
+      "finalMedianMs": 0.00028504689025878743,
+      "latencyChangePercent": -0.05974213567362385,
+      "baselineRunRangeMs": [
+        0.0002835973205566472,
+        0.00028765487670899537
+      ],
+      "finalRunRangeMs": [
+        0.0002810363769531199,
+        0.000289057403564455
+      ]
+    },
+    {
+      "name": "encryptMessage/0",
+      "baselineMedianMs": 0.08616650390625047,
+      "finalMedianMs": 0.08840486718749929,
+      "latencyChangePercent": 2.597718579465824,
+      "baselineRunRangeMs": [
+        0.08565917968750014,
+        0.08661312109374997
+      ],
+      "finalRunRangeMs": [
+        0.08802783203124953,
+        0.08878190234374905
+      ]
+    },
+    {
+      "name": "decryptMessage/0",
+      "baselineMedianMs": 0.07657324218750006,
+      "finalMedianMs": 0.07927514453125006,
+      "latencyChangePercent": 3.528520233130572,
+      "baselineRunRangeMs": [
+        0.07628726953124954,
+        0.07966031640624927
+      ],
+      "finalRunRangeMs": [
+        0.07869075390624936,
+        0.07985953515625077
+      ]
+    },
+    {
+      "name": "encryptMetadata/1024",
+      "baselineMedianMs": 0.0024707235107421788,
+      "finalMedianMs": 0.002349779785156242,
+      "latencyChangePercent": -4.89507324717231,
+      "baselineRunRangeMs": [
+        0.0023888295898437106,
+        0.0025287526855468645
+      ],
+      "finalRunRangeMs": [
+        0.0023243865966796617,
+        0.002375172973632822
+      ]
+    },
+    {
+      "name": "decryptMetadata/1024",
+      "baselineMedianMs": 0.002110010742187529,
+      "finalMedianMs": 0.00203619384765627,
+      "latencyChangePercent": -3.498413209722817,
+      "baselineRunRangeMs": [
+        0.0020553741455078267,
+        0.002672993896484399
+      ],
+      "finalRunRangeMs": [
+        0.0020101115722656604,
+        0.00206227612304688
+      ]
+    },
+    {
+      "name": "encryptMessage/1024",
+      "baselineMedianMs": 0.0899721679687513,
+      "finalMedianMs": 0.08965942578124952,
+      "latencyChangePercent": -0.34759881256878344,
+      "baselineRunRangeMs": [
+        0.08827310937499888,
+        0.10323388671874945
+      ],
+      "finalRunRangeMs": [
+        0.08894938281249942,
+        0.09036946874999963
+      ]
+    },
+    {
+      "name": "decryptMessage/1024",
+      "baselineMedianMs": 0.08088525390624923,
+      "finalMedianMs": 0.08119270898437492,
+      "latencyChangePercent": 0.38011264510839915,
+      "baselineRunRangeMs": [
+        0.07815755078125086,
+        0.08779003906249905
+      ],
+      "finalRunRangeMs": [
+        0.08045052343750037,
+        0.08193489453124947
+      ]
+    },
+    {
+      "name": "encryptMetadata/65536",
+      "baselineMedianMs": 0.1186538085937503,
+      "finalMedianMs": 0.10757527539062472,
+      "latencyChangePercent": -9.336854277519668,
+      "baselineRunRangeMs": [
+        0.11057975390625074,
+        0.12608593750000097
+      ],
+      "finalRunRangeMs": [
+        0.10609260937500054,
+        0.10905794140624891
+      ]
+    },
+    {
+      "name": "decryptMetadata/65536",
+      "baselineMedianMs": 0.1106842421874994,
+      "finalMedianMs": 0.10727425195312534,
+      "latencyChangePercent": -3.080827195435387,
+      "baselineRunRangeMs": [
+        0.1080135078124993,
+        0.12612565625000016
+      ],
+      "finalRunRangeMs": [
+        0.10594026953125102,
+        0.10860823437499967
+      ]
+    },
+    {
+      "name": "encryptMessage/65536",
+      "baselineMedianMs": 0.20117252343749925,
+      "finalMedianMs": 0.19629052734374852,
+      "latencyChangePercent": -2.426770818564339,
+      "baselineRunRangeMs": [
+        0.19861165625000154,
+        0.23053971093749936
+      ],
+      "finalRunRangeMs": [
+        0.19441503906249835,
+        0.1981660156249987
+      ]
+    },
+    {
+      "name": "decryptMessage/65536",
+      "baselineMedianMs": 0.19263411718750234,
+      "finalMedianMs": 0.18765380859375114,
+      "latencyChangePercent": -2.585372034022182,
+      "baselineRunRangeMs": [
+        0.18591926562499594,
+        0.21253320312499824
+      ],
+      "finalRunRangeMs": [
+        0.18620638281250024,
+        0.18910123437500204
+      ]
+    },
+    {
+      "name": "encryptMetadata/1048576",
+      "baselineMedianMs": 1.7940937500000018,
+      "finalMedianMs": 1.7036536562499975,
+      "latencyChangePercent": -5.040990402536338,
+      "baselineRunRangeMs": [
+        1.7356744999999592,
+        1.8430729375000396
+      ],
+      "finalRunRangeMs": [
+        1.672442750000016,
+        1.734864562499979
+      ]
+    },
+    {
+      "name": "decryptMetadata/1048576",
+      "baselineMedianMs": 1.7563723750000122,
+      "finalMedianMs": 1.6939674687499746,
+      "latencyChangePercent": -3.5530566944858233,
+      "baselineRunRangeMs": [
+        1.6995937500000196,
+        2.0451146249999965
+      ],
+      "finalRunRangeMs": [
+        1.670565124999996,
+        1.7173698124999532
+      ]
+    },
+    {
+      "name": "encryptMessage/1048576",
+      "baselineMedianMs": 1.8759635000000117,
+      "finalMedianMs": 1.785385406249958,
+      "latencyChangePercent": -4.8283505382729075,
+      "baselineRunRangeMs": [
+        1.8489687499999832,
+        2.1094166249999944
+      ],
+      "finalRunRangeMs": [
+        1.7648281249999513,
+        1.8059426874999644
+      ]
+    },
+    {
+      "name": "decryptMessage/1048576",
+      "baselineMedianMs": 1.8563619375000258,
+      "finalMedianMs": 1.7794505312500064,
+      "latencyChangePercent": -4.143125577849139,
+      "baselineRunRangeMs": [
+        1.79817968750001,
+        1.871161499999971
+      ],
+      "finalRunRangeMs": [
+        1.7689869999999814,
+        1.7899140625000314
+      ]
+    },
+    {
+      "name": "encryptMetadata/8388608",
+      "baselineMedianMs": 14.351937500000076,
+      "finalMedianMs": 13.75713524999992,
+      "latencyChangePercent": -4.144403847913591,
+      "baselineRunRangeMs": [
+        14.018083500000103,
+        20.931542000000263
+      ],
+      "finalRunRangeMs": [
+        13.627062499999738,
+        13.8872080000001
+      ]
+    },
+    {
+      "name": "decryptMetadata/8388608",
+      "baselineMedianMs": 14.390750000000025,
+      "finalMedianMs": 13.643677000000025,
+      "latencyChangePercent": -5.191341660441595,
+      "baselineRunRangeMs": [
+        13.705917000000227,
+        15.584541000000172
+      ],
+      "finalRunRangeMs": [
+        13.444541500000014,
+        13.842812500000036
+      ]
+    },
+    {
+      "name": "encryptMessage/8388608",
+      "baselineMedianMs": 14.484792000000198,
+      "finalMedianMs": 13.668322750000016,
+      "latencyChangePercent": -5.636734376304275,
+      "baselineRunRangeMs": [
+        14.247687500000211,
+        17.7212499999996
+      ],
+      "finalRunRangeMs": [
+        13.476478999999927,
+        13.860166500000105
+      ]
+    },
+    {
+      "name": "decryptMessage/8388608",
+      "baselineMedianMs": 14.105812499999956,
+      "finalMedianMs": 13.818573000000015,
+      "latencyChangePercent": -2.036320133986913,
+      "baselineRunRangeMs": [
+        13.960229499999969,
+        14.89166699999987
+      ],
+      "finalRunRangeMs": [
+        13.721520999999939,
+        13.915625000000091
+      ]
+    },
+    {
+      "name": "pgpGenerateKey",
+      "baselineMedianMs": 0.176362625000003,
+      "finalMedianMs": 0.10987980078125226,
+      "latencyChangePercent": -37.69666289484499,
+      "baselineRunRangeMs": [
+        0.1752412109375001,
+        0.2029440156249933
+      ],
+      "finalRunRangeMs": [
+        0.10874235156250123,
+        0.11101725000000329
+      ]
+    },
+    {
+      "name": "pgpEncrypt/1024",
+      "baselineMedianMs": 0.08891585546875191,
+      "finalMedianMs": 0.17386605078124973,
+      "latencyChangePercent": 95.53998537679507,
+      "baselineRunRangeMs": [
+        0.08838981250000089,
+        0.10014582812500095
+      ],
+      "finalRunRangeMs": [
+        0.1647968750000004,
+        0.18293522656249905
+      ]
+    },
+    {
+      "name": "pgpDecrypt/1024",
+      "baselineMedianMs": 0.07711653515625017,
+      "finalMedianMs": 0.1528852539062484,
+      "latencyChangePercent": 98.25223422769056,
+      "baselineRunRangeMs": [
+        0.0757882460937509,
+        0.08086588281249973
+      ],
+      "finalRunRangeMs": [
+        0.15148437499999545,
+        0.15428613281250136
+      ]
+    }
+  ]
+}

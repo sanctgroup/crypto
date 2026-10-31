@@ -1,6 +1,4 @@
 use argon2::{self, Argon2, Params};
-use rand::rngs::OsRng;
-use rand::RngCore;
 use zeroize::Zeroizing;
 
 use crate::CryptoError;
@@ -9,7 +7,7 @@ const MASTER_KEY_LEN: usize = 32;
 
 pub fn generate_salt() -> [u8; 32] {
     let mut salt = [0u8; 32];
-    OsRng.fill_bytes(&mut salt);
+    getrandom::fill(&mut salt).expect("OS randomness unavailable");
     salt
 }
 
@@ -23,8 +21,12 @@ pub fn derive_master_key(
     let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
 
     let mut key = Zeroizing::new([0u8; MASTER_KEY_LEN]);
+    let mut memory = Zeroizing::new(vec![
+        argon2::Block::default();
+        argon2.params().block_count()
+    ]);
     argon2
-        .hash_password_into(password, salt, key.as_mut())
+        .hash_password_into_with_memory(password, salt, key.as_mut(), memory.as_mut_slice())
         .map_err(|e| CryptoError::KeyDerivation(e.to_string()))?;
 
     Ok(key)

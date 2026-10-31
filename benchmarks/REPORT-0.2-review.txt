@@ -1,0 +1,90 @@
+SANCT CRYPTO WASM: BENCHMARK AND SECURITY REVIEW
+31 October 2026
+
+Scope and outcome
+The active repository is crypto/, at baseline commit a997affdad0d6734f01c2506fbb26165a21dc376. The sibling wasm/ repository is an older copy and was not changed. Source, TypeScript entry points, generated WASM bindings, build settings, and locally resolved dependencies were reviewed. This is an engineering review with regression cases, not a formal cryptographic audit or proof of constant-time execution.
+
+All changes are local and the generated wasm/ bundle has been rebuilt. Nothing was committed, published, tagged, or deployed. No source comments were added. Existing comments were retained.
+
+Confirmed findings and changes
+1. HIGH: OpenPGP encryption-subkey substitution. Public keys were parsed and their encryption flags trusted without checking binding signatures. A regression case kept Alice's primary key and fingerprint, replaced her encryption subkey with Mallory's, and demonstrated that Mallory could decrypt the resulting ciphertext. That case failed on the baseline and now passes because parsed public and secret keys are verified before use. This attack requires control of the key material supplied for a trusted identity/fingerprint; it does not require changing the primary fingerprint.
+2. MEDIUM: Non-contributory X25519 inputs. Encapsulation and both v1/v2 decapsulation accepted low-order public points, including zero and one, producing an all-zero classical shared secret. Both directions now reject them with was_contributory(). This removes the classical component of the hybrid construction; a complete break of the remaining ML-KEM component was not demonstrated.
+3. Input validation: ml-kem 0.2.3 does not perform the FIPS 203 encapsulation-key modulus or expanded-decapsulation-key hash checks. The wrapper now rejects public coefficients >=3329 and verifies SHA3-256(ek) against the stored decapsulation-key hash with a constant-time comparison. Regression tests cover these cases. This is validation hardening, not a claim that these malformed inputs alone recovered private keys.
+4. Secret lifetime: ML-KEM zeroization was disabled, several WASM result objects freed secret buffers without clearing them, the envelope decryption key was an ordinary stack array, and the allocating Argon2 API left its 64 MiB workspace unwiped. ML-KEM/Argon2 zeroize features are now enabled, the Argon2 workspace and relevant shared secrets use Zeroizing, and secret-bearing WASM result types clear their owned fields on drop. Recovery-hash comparisons now use subtle. JS getter copies, immutable JS strings, wasm-bindgen argument/return copies, and every internal upstream temporary are not comprehensively erased. Callers still need to free result objects and clear their own mutable buffers.
+5. Hex decoding silently accepted malformed input: partial parseInt values, NaN-to-zero coercion, and odd lengths. It now rejects invalid hex and odd lengths. Tests cover native APIs, fallback APIs, empty input, all byte values, subarray views, and large buffers.
+6. Concurrent initCrypto calls could start multiple WASM initializations while the boolean initialization flag was still false. Initialization now shares one promise, and a failed initialization permits a retry. A regression test checks 16 simultaneous callers and successful retry.
+
+Performance changes
+WASM encryption writes directly into its final nonce/ciphertext/tag buffer. The WASM envelope path seals directly into the wire buffer and opens a borrowed envelope rather than cloning its ciphertext. Existing native object APIs remain available. OpenPGP key generation/import now derives the signed public key from existing signed secret-key material instead of re-signing it. Release builds use LTO and one code generation unit. TypeScript base64/hex conversion uses native Uint8Array APIs when available, with tested fallbacks.
+
+Measurement conditions
+Apple M5, macOS arm64, Node v26.12.0 / V8 14.6.202.34-node.39; rustc 1.99.1 (58cf8f9c3 2026-10-13); wasm-pack 0.13.1. These are Node/V8 WASM measurements, not Safari/Firefox, low-end-device, or mobile-browser measurements. All benchmark keys and plaintexts are synthetic.
+WASM benchmarks include JS/WASM transfers, OS randomness where used, and result cleanup. Setup and roundtrip assertions are excluded from timing. Eight warmups, batches calibrated to at least 15 ms, nine batch samples, median per operation. Argon2 uses one warmup and one operation per sample. The comparison aggregates the median of three baseline-run medians and two final-run medians. Baseline source was rebuilt with the same local dependency lock and toolchain, rather than timing an artifact of unknown build provenance. Run-to-run ranges and all raw batch samples are retained in JSON. Small single-digit gains should be treated as indicative given scheduling/thermal/GC noise.
+
+Operation                                      Before ms     After ms     Latency change
+deriveMasterKey/64MiB,t=3,p=1                    85.8602      93.8212          9.3%
+generateIdentityKeys                              0.0848       0.0867          2.2%
+decryptPrivateKeys                                0.0430       0.0396         -8.0%
+encryptMessage/65536                              0.2012       0.1963         -2.4%
+decryptMessage/65536                              0.1926       0.1877         -2.6%
+encryptMessage/1048576                            1.8760       1.7854         -4.8%
+decryptMessage/1048576                            1.8564       1.7795         -4.1%
+encryptMessage/8388608                           14.4848      13.6683         -5.6%
+decryptMessage/8388608                           14.1058      13.8186         -2.0%
+pgpGenerateKey                                    0.1764       0.1099        -37.7%
+pgpEncrypt/1024                                   0.0889       0.1739         95.5%
+pgpDecrypt/1024                                   0.0771       0.1529         98.3%
+
+WASM bytes: 2,187,506 -> 2,056,906 (-6.0%).
+Gzip bytes: 730,996 -> 716,004 (-2.1%).
+The initially checked-in binary was 2,241,808 bytes; its size is not used as the timing baseline.
+
+TypeScript conversions, 1 MiB input bytes (milliseconds)
+Operation                 Before       Native after   Fallback after
+bytesToBase64                 17.409          0.119           12.184
+base64ToBytes                 29.537          0.147            1.198
+bytesToHex                    55.661          0.077            5.443
+hexToBytes                    13.642          1.136           14.496
+
+Encoding measurements use five warmups and nine individual samples. Native API speedups only apply to engines with those APIs. The fallback hex parser remains approximately as fast as before; stricter validation adds some overhead.
+
+Tradeoffs
+Argon2 costs about 9% more latency after clearing its workspace. Its 64 MiB memory cost, three passes, one lane, Argon2id version, salt format and derived-key output are unchanged. Moving synchronous derivation to a Web Worker would improve UI responsiveness without weakening the work factor, but no worker integration was added.
+OpenPGP encryption/decryption cost roughly twice as much because key signatures are now verified. This security check is intentionally retained. Key generation is about 38% faster because redundant signing was removed. Large hybrid-message throughput remains around 550-590 MiB/s in these runs, with modest improvements rather than an order-of-magnitude cryptographic speedup.
+
+Unresolved dependency advisories
+RUSTSEC-2026-0387: crypto-bigint 0.5.5 has timing variability in operations intended to be constant-time. It enters through pgp and its elliptic-curve dependencies. RustSec lists a fix at >=0.7.6, which is outside the current transitive semver ranges. No claim of practical exploitation of this compiled WASM was established. The direct X25519/ML-KEM envelope path does not use this crate.
+RUSTSEC-2023-0071: rsa 0.9.10 has the Marvin timing attack, with no patched version listed. It is transitive through pgp and relevant when using imported RSA keys. The existing deny.toml ignore remains; no new advisory ignores were added. Network-observable RSA decryption needs particular care. Generated OpenPGP keys use Ed25519/Curve25519.
+cargo audit reports both advisories. cargo deny check advisories fails on crypto-bigint and still suppresses RSA under the pre-existing ignore. spin 0.9.8 is also yanked, pulled in through legacy big-integer dependencies. An upstream OpenPGP/dependency migration needs its own compatibility and advisory checks; a blanket cargo update within current constraints does not resolve these issues.
+
+Additional review findings and limits
+OpenPGP recipient selection still lacks a complete expiration/revocation policy. The API reports primary-key status but encrypt_to_recipients does not enforce it. The recursive compressed-message extraction has no explicit application decompression budget or nesting limit. These remain review findings; no resource-exhaustion stress exploit was run.
+OpenPGP parsing now fails closed through pgp 0.15 verify(). That API checks all certification signatures as self-signatures, so keys with third-party certifications or unsupported designated-revoker arrangements may be rejected. Generated-key, passphrase import/export and baseline interoperability tests pass, but broad GnuPG/keyserver fixture compatibility was not established. A future migration should use an explicit self-signature/certification policy rather than weakening subkey-binding checks.
+Neither hybrid-envelope decryption nor the OpenPGP plaintext extraction API establishes sender authenticity. OpenPGP signed message wrappers are unpacked without verifying a sender signature. Application context is not supplied as AEAD associated data. Do not display a verified-sender claim solely because this API decrypted a message. No protocol version or wire format was changed in this work.
+No formal timing proof, independent ML-KEM known-answer/vector campaign, comprehensive fuzzing, whole-application threat-model audit, or browser-engine matrix was performed.
+
+Validation
+56 Rust tests pass (51 core + 5 bindings), including the exploit regression, low-order X25519, both ML-KEM checks, corruption/truncation cases, v1 compatibility and new/old wire API interoperability. Three JS tests pass, exercising native/fallback encoders and initialization concurrency/retry. The WASM test script passes against the pre-change WASM instance in both directions for messages, metadata, identities and OpenPGP. Clippy with -D warnings, rustfmt, git diff --check, a strict TypeScript check with esnext.disposable, and the release WASM build pass. CI now runs the WASM and JS checks with Node 24. The dependency advisory checks remain failing as described above.
+
+Reproduction from crypto/
+  cp benchmarks/Cargo.lock.snapshot Cargo.lock
+  cargo test --workspace --all-features --locked
+  cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+  npm run build:wasm
+  npm run test:wasm
+  npm run test:js
+  npm run bench -- wasm benchmarks/local.json
+  npm run bench:encoding -- benchmarks/local-encoding.json
+  node scripts/benchmark-encoding.mjs benchmarks/local-fallback.json --fallback
+Run benchmarks serially while compilers and other heavy work are idle. Cargo.lock is ignored by this repository; its exact benchmark snapshot and dependency inventory are included for reproduction. target/bench-baseline currently contains the local pre-change build, but cargo clean will remove it. Its source commit is recorded above.
+
+Final WASM SHA-256: 01f3e3d635520f8f6f46f7ba31c8558c98a805764321dd528c02f04f9cf461fa
+Lockfile SHA-256: f057e68fc92b18dafb58d9470561adbbac311a7840b297982adfa3bd928f3dbf
+
+Primary references
+https://rustsec.org/advisories/RUSTSEC-2026-0387.html
+https://rustsec.org/advisories/RUSTSEC-2023-0071.html
+https://docs.rs/x25519-dalek/2.0.1/x25519_dalek/struct.SharedSecret.html
+https://github.com/RustCrypto/KEMs/issues/288
+https://csrc.nist.gov/pubs/fips/203/final
+https://github.com/rpgp/rpgp/tree/v0.15.0

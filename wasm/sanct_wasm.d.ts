@@ -1,5 +1,3 @@
-/* tslint:disable */
-/* eslint-disable */
 
 export class IdentityKeys {
     private constructor();
@@ -16,6 +14,8 @@ export class PgpDecryptResult {
     [Symbol.dispose](): void;
     readonly fingerprintUsed: string;
     readonly plaintext: Uint8Array;
+    readonly signatureVerified: boolean;
+    readonly signerFingerprint: string | undefined;
 }
 
 export class PgpGeneratedKey {
@@ -72,51 +72,53 @@ export class RecoveryResult {
     readonly recoveryKey: Uint8Array;
 }
 
-export function computeSubjectHash(threading_key: Uint8Array, subject: string): Uint8Array;
+export function computeSubjectHash(threading_key: Uint8Array | number[], subject: string): Uint8Array;
 
-export function decryptBundleWithRecovery(recovery_key: Uint8Array, recovery_encrypted_bundle: Uint8Array): Uint8Array;
+export function decryptBundleWithRecovery(recovery_key: Uint8Array | number[], recovery_encrypted_bundle: Uint8Array | number[]): Uint8Array;
 
-export function decryptMessage(x25519_private: Uint8Array, mlkem_private: Uint8Array, sealed_bytes: Uint8Array): Uint8Array;
+export function decryptMessage(x25519_private: Uint8Array | number[], mlkem_private: Uint8Array | number[], sealed_bytes: Uint8Array | number[]): Uint8Array;
 
-export function decryptMetadata(key: Uint8Array, ciphertext: Uint8Array): Uint8Array;
+export function decryptMetadata(key: Uint8Array | number[], ciphertext: Uint8Array | number[]): Uint8Array;
 
-export function decryptPrivateKeys(master_key: Uint8Array, encrypted_bundle: Uint8Array): PrivateKeys;
+export function decryptPrivateKeys(master_key: Uint8Array | number[], encrypted_bundle: Uint8Array | number[]): PrivateKeys;
 
-export function deriveMasterKey(password: string, salt: Uint8Array): Uint8Array;
+export function deriveMasterKey(password: string, salt: Uint8Array | number[]): Uint8Array;
 
-export function encryptBundleForRecovery(recovery_key: Uint8Array, private_bundle_plaintext: Uint8Array): Uint8Array;
+export function encryptBundleForRecovery(recovery_key: Uint8Array | number[], private_bundle_plaintext: Uint8Array | number[]): Uint8Array;
 
-export function encryptDraft(own_x25519_pub: Uint8Array, own_mlkem_pub: Uint8Array, plaintext: Uint8Array): Uint8Array;
+export function encryptDraft(own_x25519_pub: Uint8Array | number[], own_mlkem_pub: Uint8Array | number[], plaintext: Uint8Array | number[]): Uint8Array;
 
-export function encryptMessage(recipient_x25519_pub: Uint8Array, recipient_mlkem_pub: Uint8Array, plaintext: Uint8Array): Uint8Array;
+export function encryptMessage(recipient_x25519_pub: Uint8Array | number[], recipient_mlkem_pub: Uint8Array | number[], plaintext: Uint8Array | number[]): Uint8Array;
 
-export function encryptMetadata(key: Uint8Array, plaintext: Uint8Array): Uint8Array;
+export function encryptMetadata(key: Uint8Array | number[], plaintext: Uint8Array | number[]): Uint8Array;
 
-export function generateIdentityKeys(master_key: Uint8Array): IdentityKeys;
+export function generateIdentityKeys(master_key: Uint8Array | number[]): IdentityKeys;
 
 export function generateRecoveryPhrase(): RecoveryResult;
 
 export function generateSalt(): Uint8Array;
 
-export function hashRecoveryKey(recovery_key: Uint8Array): Uint8Array;
+export function hashRecoveryKey(recovery_key: Uint8Array | number[]): Uint8Array;
 
-export function pgpDecryptMessage(armored_secrets: Uint8Array[], armored_ciphertext: Uint8Array): PgpDecryptResult;
+export function pgpDecryptMessage(armored_secrets: Uint8Array[], armored_ciphertext: Uint8Array | number[]): PgpDecryptResult;
 
-export function pgpEncryptToRecipients(armored_publics: Uint8Array[], plaintext: Uint8Array): string;
+export function pgpDecryptMessageVerified(armored_secrets: Uint8Array[], armored_ciphertext: Uint8Array | number[], trusted_signers: Uint8Array[]): PgpDecryptResult;
 
-export function pgpExportKey(unprotected_armored: Uint8Array, passphrase: string): string;
+export function pgpEncryptToRecipients(armored_publics: Uint8Array[], plaintext: Uint8Array | number[]): string;
+
+export function pgpExportKey(unprotected_armored: Uint8Array | number[], passphrase: string): string;
 
 export function pgpGenerateKey(name: string, email: string): PgpGeneratedKey;
 
-export function pgpImportKey(input: Uint8Array, passphrase?: string | null): PgpImportedKey;
+export function pgpImportKey(input: Uint8Array | number[], passphrase?: string | null): PgpImportedKey;
 
-export function pgpKeyInfo(armored_public: Uint8Array): PgpPublicKeyInfo;
+export function pgpKeyInfo(armored_public: Uint8Array | number[]): PgpPublicKeyInfo;
 
 export function recoveryKeyFromPhrase(phrase: string): Uint8Array;
 
-export function sealForRecipient(recipient_x25519_pub: Uint8Array, recipient_mlkem_pub: Uint8Array, plaintext_body: Uint8Array): Uint8Array;
+export function sealForRecipient(recipient_x25519_pub: Uint8Array | number[], recipient_mlkem_pub: Uint8Array | number[], plaintext_body: Uint8Array | number[]): Uint8Array;
 
-export function sealMetadataForRecipient(recipient_x25519_pub: Uint8Array, recipient_mlkem_pub: Uint8Array, metadata_json: Uint8Array): Uint8Array;
+export function sealMetadataForRecipient(recipient_x25519_pub: Uint8Array | number[], recipient_mlkem_pub: Uint8Array | number[], metadata_json: Uint8Array | number[]): Uint8Array;
 
 export function start(): void;
 
@@ -149,6 +151,7 @@ export interface InitOutput {
     readonly identitykeys_mlkem768Public: (a: number) => [number, number];
     readonly identitykeys_x25519Public: (a: number) => [number, number];
     readonly pgpDecryptMessage: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly pgpDecryptMessageVerified: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly pgpEncryptToRecipients: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly pgpExportKey: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly pgpGenerateKey: (a: number, b: number, c: number, d: number) => [number, number, number];
@@ -156,6 +159,8 @@ export interface InitOutput {
     readonly pgpKeyInfo: (a: number, b: number) => [number, number, number];
     readonly pgpdecryptresult_fingerprintUsed: (a: number) => [number, number];
     readonly pgpdecryptresult_plaintext: (a: number) => [number, number];
+    readonly pgpdecryptresult_signatureVerified: (a: number) => number;
+    readonly pgpdecryptresult_signerFingerprint: (a: number) => [number, number];
     readonly pgpgeneratedkey_armoredPublic: (a: number) => [number, number];
     readonly pgpgeneratedkey_armoredSecret: (a: number) => [number, number];
     readonly pgpgeneratedkey_fingerprint: (a: number) => [number, number];
@@ -169,6 +174,8 @@ export interface InitOutput {
     readonly pgpimportedkey_isRevoked: (a: number) => number;
     readonly pgpimportedkey_uids: (a: number) => [number, number];
     readonly pgppublickeyinfo_canEncrypt: (a: number) => number;
+    readonly pgppublickeyinfo_createdAt: (a: number) => bigint;
+    readonly pgppublickeyinfo_expiresAt: (a: number) => [number, bigint];
     readonly pgppublickeyinfo_fingerprint: (a: number) => [number, number];
     readonly pgppublickeyinfo_isExpired: (a: number) => number;
     readonly pgppublickeyinfo_isRevoked: (a: number) => number;
@@ -179,11 +186,9 @@ export interface InitOutput {
     readonly recoveryKeyFromPhrase: (a: number, b: number) => [number, number, number, number];
     readonly recoveryresult_phrase: (a: number) => [number, number];
     readonly recoveryresult_recoveryKey: (a: number) => [number, number];
-    readonly pgppublickeyinfo_expiresAt: (a: number) => [number, bigint];
-    readonly start: () => void;
-    readonly pgppublickeyinfo_createdAt: (a: number) => bigint;
     readonly sealForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly sealMetadataForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly start: () => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
@@ -197,22 +202,6 @@ export interface InitOutput {
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;
 
-/**
- * Instantiates the given `module`, which can either be bytes or
- * a precompiled `WebAssembly.Module`.
- *
- * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
- *
- * @returns {InitOutput}
- */
 export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
 
-/**
- * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
- * for everything else, calls `WebAssembly.instantiate` directly.
- *
- * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
- *
- * @returns {Promise<InitOutput>}
- */
 export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;

@@ -1,10 +1,10 @@
-use hmac::{Hmac, Mac};
-use ml_kem::{EncodedSizeUser, KemCore, MlKem768, B32};
+use hmac::{Hmac, KeyInit, Mac};
+use ml_kem::{DecapsulationKey, KeyExport, MlKem768, Seed};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
-use crate::hybrid::{MlKemKeyPair, X25519KeyPair};
+use crate::hybrid::{MlKemEncoding, MlKemKeyPair, X25519KeyPair};
 use crate::symmetric;
 use crate::CryptoError;
 
@@ -31,7 +31,7 @@ pub fn generate_identity_keys(master_key: &[u8]) -> Result<IdentityKeyBundle, Cr
 
     let x25519_kp = X25519KeyPair::generate();
     let mlkem_kp = MlKemKeyPair::generate();
-    let threading_key = derive_threading_key(master_key)?;
+    let threading_key = Zeroizing::new(derive_threading_key(master_key)?);
 
     let private_keys = PrivateKeys {
         x25519_secret: x25519_kp.secret.as_bytes().to_vec(),
@@ -56,23 +56,29 @@ pub fn derive_lookup_public_keys(lookup_key: &[u8]) -> Result<(Vec<u8>, Vec<u8>)
 
     let hk = Hkdf::<Sha256>::new(Some(b"sanct-directory-lookup-v1"), lookup_key);
 
-    let mut x25519_seed = [0u8; 32];
-    let mut mlkem_d = [0u8; 32];
-    let mut mlkem_z = [0u8; 32];
+    let mut x25519_seed = Zeroizing::new([0u8; 32]);
+    let mut mlkem_d = Zeroizing::new([0u8; 32]);
+    let mut mlkem_z = Zeroizing::new([0u8; 32]);
 
-    hk.expand(b"x25519-secret", &mut x25519_seed)
+    hk.expand(b"x25519-secret", x25519_seed.as_mut())
         .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
-    hk.expand(b"mlkem-d", &mut mlkem_d)
+    hk.expand(b"mlkem-d", mlkem_d.as_mut())
         .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
-    hk.expand(b"mlkem-z", &mut mlkem_z)
+    hk.expand(b"mlkem-z", mlkem_z.as_mut())
         .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
 
     let x25519 = X25519KeyPair::from_secret_bytes(&x25519_seed);
-    let d = B32::from(mlkem_d);
-    let z = B32::from(mlkem_z);
-    let (_, ek) = MlKem768::generate_deterministic(&d, &z);
+    let mut seed = Seed::default();
+    seed[..32].copy_from_slice(mlkem_d.as_ref());
+    seed[32..].copy_from_slice(mlkem_z.as_ref());
+    let dk = DecapsulationKey::<MlKem768>::from_seed(seed);
+    seed.as_mut_slice().zeroize();
+    let ek = dk.encapsulation_key();
+    mlkem_d.zeroize();
+    mlkem_z.zeroize();
+    x25519_seed.zeroize();
 
-    Ok((x25519.public.as_bytes().to_vec(), ek.as_bytes().to_vec()))
+    Ok((x25519.public.as_bytes().to_vec(), ek.to_bytes().to_vec()))
 }
 
 pub fn decrypt_private_bundle(

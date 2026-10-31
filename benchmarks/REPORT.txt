@@ -1,0 +1,67 @@
+SANCT CRYPTO 0.3.0: DEPENDENCY AND SECURITY UPDATE
+31 October 2026
+
+Outcome
+The crypto/ repository and its generated WASM bundle are updated locally to 0.3.0. The older sibling wasm/ repository and separately pinned application dependencies were not changed. No commit, tag, release, deployment or remote write was performed. Source and generated bindings contain no newly added comments. The earlier benchmark/review is preserved in REPORT-0.2-review.txt.
+
+Dependencies and reproducibility
+Updated OpenPGP 0.15 -> 0.21, ML-KEM 0.2 -> 0.3.3, X25519 2 -> 3, ChaCha20Poly1305 0.10 -> 0.11, Argon2 0.5 -> 0.6, HKDF 0.12 -> 0.13, HMAC 0.12 -> 0.13, SHA-256/SHA-2 0.10 -> 0.11, getrandom 0.4 and wasm-pack 0.13.1 -> 0.15.1. All compatible transitive packages were refreshed, including wasm-bindgen 0.2.130. Rand 0.8 and getrandom 0.2 remain for the current OpenPGP API and its WASM randomness backend; newer versions do not satisfy those upstream API requirements. Obsolete direct SHA-3 declarations were removed; ML-KEM manages its current SHA-3 dependency.
+Cargo.lock is now tracked and builds/tests use --locked. dependencies-updated.json records the resolved packages. GitHub checkout/setup-node/upload/download actions are updated to their latest stable releases, pinned by commit SHA; versions and SHAs are in actions.json. CI and release scripts use Node 26.
+
+Security changes
+OpenPGP encryption checks current, cryptographically validated self-certifications, primary-key expiration/revocation and encryption-subkey validity, expiration, revocation and flags. Foreign user certifications are ignored for self-identity decisions, while secret-key import preserves their serialized certificates. The earlier encryption-subkey substitution regression still passes.
+The current upstream OpenPGP dependency still includes timing-affected RSA and elliptic-curve libraries. Private-key import/export/decryption is restricted to Ed25519 and X25519, including their legacy Curve25519 packet forms. Other private-key algorithms are rejected before unlock or private-key use. Encryption also excludes affected ECDH curves, preventing generation of vulnerable ephemeral NIST-curve secrets. Public-key signature verification remains available. This is an application mitigation, not an upstream patch and not proof that the dependency graph is vulnerability-free.
+Signed OpenPGP messages are no longer silently unpacked. pgpDecryptMessage rejects signed messages without a trusted signer. The new pgpDecryptMessageVerified(secretKeys, ciphertext, trustedSignerPublicKeys) requires a valid data signature against supplied trusted keys, rejects unsigned/invalid/expired/untrusted signatures and checks the key/signing-subkey policy. Each signed layer must verify; all exposed signatures must match supplied trusted keys. Results expose signatureVerified and signerFingerprint. fingerprintUsed remains the decryption identity. Plaintext is retained in a Zeroizing buffer until verification succeeds. The caller must obtain the signer keys from a trusted source and associate them with the expected sender.
+OpenPGP parsing/decryption now limits armored ciphertext to 96 MiB, plaintext to 64 MiB, serialized keys to 1 MiB each, key lists to 128 entries, decoded message nesting to eight levels including the literal layer, and aggregate decompressed bytes to 128 MiB. SEIPDv1 uses bounded CheckFirst authentication before plaintext parsing. Imported private bundles allow at most 32 secret subkeys. Imported Argon2 S2K memory is limited to 64 MiB, six passes and eight lanes, with an aggregate KDF work budget; excessive passphrases are rejected. These are application limits on the exposed paths, not a formal bound on every upstream parser allocation.
+ML-KEM 0.3 now performs its own FIPS public-key and expanded-private-key validation. The existing 2400-byte private-key serialization is retained through the upstream expanded-key API so existing encrypted key bundles remain readable. Both v1 and v2 envelope decryption remain available; new envelopes still emit v2. The Argon2 work factor and derived-key output are unchanged.
+WASM secret inputs are now owned and zeroized, including password strings, private keys, encryption plaintext and recovery data. Secret-bearing native/WASM result objects clear their owned fields on drop. Generated glue clears return buffers before freeing them, including decoded string/byte outputs. The build hardening step fails if the expected wasm-bindgen output pattern changes. Directory-lookup seeds, serialized ML-KEM keys, threading-key intermediates and recovery entropy also receive cleanup. Secret result Debug output is redacted. Recovery phrase parsing rejects extraneous characters instead of silently dropping them.
+
+Compatibility changes
+Unsafe legacy private-key algorithms are intentionally disabled. Previously imported RSA, DSA, NIST/secp ECDSA or non-Curve25519 ECDH private material must be migrated using an isolated suitable implementation; it is not deleted or re-encrypted by this update. Expired/revoked recipients and weak/expired self-certifications are rejected for new encryption. Historical signed email now needs trusted signer keys supplied through the verified API. Verification uses current key/revocation status, so old signatures from currently expired or revoked keys are not accepted under a historical-time policy.
+Hybrid Sanct envelopes still provide recipient confidentiality and ciphertext integrity, not an authenticated sender identity. No sender-signing key or new hybrid wire protocol was invented in this update. Applications must continue to establish sender identity through their own authenticated protocol. JavaScript strings and caller-owned JS buffers cannot be comprehensively erased by this library; callers retain responsibility for their copies and for freeing result handles. The fixture memory checks do not prove erasure of every upstream temporary or constant-time execution.
+
+Build and release checks
+The release workflow validates versions through a Node script with environment-variable inputs, removing direct GitHub-expression interpolation from shell commands. The release version is applied before building, and the lockfile/manifests accompanying the tested artifact are restored into the release commit. Native checks, WASM checks, JS checks and the full cargo-deny gate precede publication. Contents-write permission is confined to the publication job. Shell bodies and workflow YAML were checked locally; no GitHub Actions run was triggered.
+
+Validation results
+65 Rust tests pass (60 core, five bindings); five JS tests pass; Clippy with -D warnings, rustfmt, git diff --check and strict TypeScript checking pass. The release WASM build succeeds. Interoperability checks against the preceding WASM build pass in both directions for keys, metadata, envelopes and unsigned OpenPGP. Regressions cover subkey substitution, low-order X25519, ML-KEM validation, third-party certificates, expiry/revocation, unsafe private algorithms, unsafe ephemeral ECDH, malicious imported Argon2 settings, signed/unsigned/wrong-signer behavior, compressed-byte/nesting limits, initialization concurrency/retry, native/fallback encoders and release-version injection inputs. A WASM memory fixture confirms that its tested plaintext/password input and output patterns do not remain in linear memory after calls; this is a regression check rather than a universal memory-erasure proof.
+cargo deny: bans, licenses and sources pass. Advisories fail on the two upstream issues below. cargo audit reports the same two issues and no yanked-package warning. No advisory ignores remain. CI and release security gates therefore remain red until the upstream issues are resolved or an explicit future policy decision changes the gate.
+
+Unresolved upstream advisories
+RUSTSEC-2026-0387: crypto-bigint 0.5.5 timing variability, through pgp 0.21 elliptic-curve dependencies. RustSec lists >=0.7.6 as fixed, outside their current dependency ranges. Private-key use of affected algorithms is blocked by the application policy described above.
+RUSTSEC-2023-0071: rsa 0.9.10 Marvin timing attack, through pgp 0.21. No patched release is listed. RSA private-key operations are blocked. Both packages remain compiled transitive dependencies; their advisories have not been hidden or declared fixed.
+
+Updated measurements
+Apple M5, Node v26.12.0 / V8 14.6.202.34-node.39, rustc 1.99.1 (58cf8f9c3 2026-10-13), wasm-pack 0.15.1. The same harness includes JS/WASM transfer, randomness and cleanup. The table compares a prior 0.2 run with one updated 0.3 run, each using nine timed batches; small differences are indicative and not statistically established.
+Operation                                  Prior 0.2 ms    Updated 0.3 ms
+deriveMasterKey/64MiB,t=3,p=1                    92.5282           84.8468
+generateIdentityKeys                              0.0857            0.0913
+encryptMessage/1048576                            1.7648            1.9390
+decryptMessage/1048576                            1.7690            1.8018
+pgpGenerateKey                                    0.1087            0.0823
+pgpEncrypt/1024                                   0.1648            0.2023
+pgpDecrypt/1024                                   0.1515            0.2049
+
+WASM binary: 2,056,906 -> 3,486,075 bytes. Gzip: 716,004 -> 1,138,826 bytes.
+The newer OpenPGP implementation increases download size. The stricter OpenPGP checks and buffer cleanup add work; updating dependencies is not a promise that every operation becomes faster. The native base64/hex optimization remains in place and both native/fallback paths pass tests. Full raw measurements are in updated.json; comparison-updated.json contains the comparison.
+
+Reproduce from crypto/
+  cargo test --workspace --all-features --locked
+  cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+  npm run build:wasm
+  npm run test:js
+  npm run test:wasm
+  npm run bench -- wasm benchmarks/local-updated.json
+  cargo audit
+  cargo deny check
+The last two commands are expected to fail on the reported advisories. Run benchmarks while compilers and other heavy work are idle. No formal cryptographic audit, broad browser-engine matrix or exhaustive fuzzing campaign was performed.
+
+WASM SHA-256: d4e72901c5081bb4b85497616fb2f9b7748ebebc689535bb59fd3eab17b28f77
+Cargo.lock SHA-256: 42d5321ea90a7e1693d53c178162c8adbaaf293e692eb12e1e82aad65715f53b
+
+Primary references
+https://github.com/rpgp/rpgp
+https://crates.io/crates/pgp/0.21.0
+https://crates.io/crates/ml-kem/0.3.3
+https://rustsec.org/advisories/RUSTSEC-2026-0387.html
+https://rustsec.org/advisories/RUSTSEC-2023-0071.html

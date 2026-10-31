@@ -1,20 +1,22 @@
 use hkdf::Hkdf;
-use rand::Rng;
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::symmetric;
 use crate::CryptoError;
 
 const RECOVERY_KEY_LEN: usize = 32;
 
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryPhrase {
     pub phrase: String,
     pub recovery_key: [u8; RECOVERY_KEY_LEN],
 }
 
 pub fn generate_recovery_phrase() -> RecoveryPhrase {
-    let mut entropy = [0u8; 32];
-    rand::rngs::OsRng.fill(&mut entropy);
+    let mut entropy = Zeroizing::new([0u8; 32]);
+    getrandom::fill(entropy.as_mut()).expect("OS randomness unavailable");
 
     let phrase = format_phrase(&entropy);
     let recovery_key = derive_recovery_key(&entropy);
@@ -26,7 +28,7 @@ pub fn generate_recovery_phrase() -> RecoveryPhrase {
 }
 
 pub fn recovery_key_from_phrase(phrase: &str) -> Result<[u8; RECOVERY_KEY_LEN], CryptoError> {
-    let entropy = parse_phrase(phrase)?;
+    let entropy = Zeroizing::new(parse_phrase(phrase)?);
     Ok(derive_recovery_key(&entropy))
 }
 
@@ -35,8 +37,11 @@ pub fn hash_recovery_key(recovery_key: &[u8]) -> Vec<u8> {
 }
 
 pub fn verify_recovery_key(recovery_key: &[u8], stored_hash: &[u8]) -> bool {
+    if recovery_key.len() != RECOVERY_KEY_LEN {
+        return false;
+    }
     let computed = Sha256::digest(recovery_key);
-    constant_time_eq(computed.as_slice(), stored_hash)
+    bool::from(computed.as_slice().ct_eq(stored_hash))
 }
 
 pub fn encrypt_bundle_for_recovery(
@@ -72,9 +77,21 @@ fn format_phrase(entropy: &[u8; 32]) -> String {
 }
 
 fn parse_phrase(phrase: &str) -> Result<[u8; 32], CryptoError> {
-    let cleaned: String = phrase.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+    if phrase.len() > 256
+        || phrase
+            .chars()
+            .any(|c| !c.is_ascii_hexdigit() && c != '-' && !c.is_ascii_whitespace())
+    {
+        return Err(CryptoError::InvalidCiphertext);
+    }
+    let cleaned = Zeroizing::new(
+        phrase
+            .chars()
+            .filter(|c| c.is_ascii_hexdigit())
+            .collect::<String>(),
+    );
 
-    let cleaned = cleaned.to_lowercase();
+    let cleaned = Zeroizing::new(cleaned.to_lowercase());
     if cleaned.len() != 64 {
         return Err(CryptoError::InvalidCiphertext);
     }
@@ -89,17 +106,6 @@ fn parse_phrase(phrase: &str) -> Result<[u8; 32], CryptoError> {
 
 fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
 }
 
 #[cfg(test)]

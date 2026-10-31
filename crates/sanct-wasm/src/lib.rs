@@ -1,4 +1,5 @@
 use wasm_bindgen::prelude::*;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 #[wasm_bindgen(start)]
 pub fn start() {
@@ -31,6 +32,7 @@ impl IdentityKeys {
 }
 
 #[wasm_bindgen]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PrivateKeys {
     pub(crate) x25519_secret: Vec<u8>,
     pub(crate) mlkem768_secret: Vec<u8>,
@@ -56,6 +58,7 @@ impl PrivateKeys {
 }
 
 #[wasm_bindgen]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryResult {
     pub(crate) phrase: String,
     pub(crate) recovery_key: Vec<u8>,
@@ -80,12 +83,16 @@ pub fn generate_salt() -> Vec<u8> {
 }
 
 #[wasm_bindgen(js_name = "deriveMasterKey")]
-pub fn derive_master_key(password: &str, salt: &[u8]) -> Result<Vec<u8>, JsError> {
+pub fn derive_master_key(password: String, salt: &[u8]) -> Result<Vec<u8>, JsError> {
+    let password = Zeroizing::new(password);
+    let password = password.as_str();
     Ok(sanct_crypto::password::derive_master_key(password.as_bytes(), salt)?.to_vec())
 }
 
 #[wasm_bindgen(js_name = "generateIdentityKeys")]
-pub fn generate_identity_keys(master_key: &[u8]) -> Result<IdentityKeys, JsError> {
+pub fn generate_identity_keys(master_key: Vec<u8>) -> Result<IdentityKeys, JsError> {
+    let master_key = Zeroizing::new(master_key);
+    let master_key = master_key.as_slice();
     let bundle = sanct_crypto::keys::generate_identity_keys(master_key)?;
     Ok(IdentityKeys {
         x25519_public: bundle.x25519_public,
@@ -96,9 +103,11 @@ pub fn generate_identity_keys(master_key: &[u8]) -> Result<IdentityKeys, JsError
 
 #[wasm_bindgen(js_name = "decryptPrivateKeys")]
 pub fn decrypt_private_keys(
-    master_key: &[u8],
+    master_key: Vec<u8>,
     encrypted_bundle: &[u8],
 ) -> Result<PrivateKeys, JsError> {
+    let master_key = Zeroizing::new(master_key);
+    let master_key = master_key.as_slice();
     let keys = sanct_crypto::keys::decrypt_private_bundle(master_key, encrypted_bundle)?;
     Ok(PrivateKeys {
         x25519_secret: keys.x25519_secret.clone(),
@@ -111,31 +120,39 @@ pub fn decrypt_private_keys(
 pub fn encrypt_message(
     recipient_x25519_pub: &[u8],
     recipient_mlkem_pub: &[u8],
-    plaintext: &[u8],
+    plaintext: Vec<u8>,
 ) -> Result<Vec<u8>, JsError> {
-    let sealed = sanct_crypto::envelope::SealedEnvelope::seal(
+    let plaintext = Zeroizing::new(plaintext);
+    let plaintext = plaintext.as_slice();
+    Ok(sanct_crypto::envelope::SealedEnvelope::seal_to_bytes(
         recipient_x25519_pub,
         recipient_mlkem_pub,
         plaintext,
-    )?;
-    Ok(sealed.to_bytes())
+    )?)
 }
 
 #[wasm_bindgen(js_name = "decryptMessage")]
 pub fn decrypt_message(
-    x25519_private: &[u8],
-    mlkem_private: &[u8],
+    x25519_private: Vec<u8>,
+    mlkem_private: Vec<u8>,
     sealed_bytes: &[u8],
 ) -> Result<Vec<u8>, JsError> {
-    let sealed = sanct_crypto::envelope::SealedEnvelope::from_bytes(sealed_bytes)?;
-    Ok(sealed.open(x25519_private, mlkem_private)?)
+    let x25519_private = Zeroizing::new(x25519_private);
+    let x25519_private = x25519_private.as_slice();
+    let mlkem_private = Zeroizing::new(mlkem_private);
+    let mlkem_private = mlkem_private.as_slice();
+    Ok(sanct_crypto::envelope::SealedEnvelope::open_bytes(
+        x25519_private,
+        mlkem_private,
+        sealed_bytes,
+    )?)
 }
 
 #[wasm_bindgen(js_name = "sealForRecipient")]
 pub fn seal_for_recipient(
     recipient_x25519_pub: &[u8],
     recipient_mlkem_pub: &[u8],
-    plaintext_body: &[u8],
+    plaintext_body: Vec<u8>,
 ) -> Result<Vec<u8>, JsError> {
     encrypt_message(recipient_x25519_pub, recipient_mlkem_pub, plaintext_body)
 }
@@ -144,7 +161,7 @@ pub fn seal_for_recipient(
 pub fn seal_metadata_for_recipient(
     recipient_x25519_pub: &[u8],
     recipient_mlkem_pub: &[u8],
-    metadata_json: &[u8],
+    metadata_json: Vec<u8>,
 ) -> Result<Vec<u8>, JsError> {
     encrypt_message(recipient_x25519_pub, recipient_mlkem_pub, metadata_json)
 }
@@ -153,50 +170,68 @@ pub fn seal_metadata_for_recipient(
 pub fn encrypt_draft(
     own_x25519_pub: &[u8],
     own_mlkem_pub: &[u8],
-    plaintext: &[u8],
+    plaintext: Vec<u8>,
 ) -> Result<Vec<u8>, JsError> {
     encrypt_message(own_x25519_pub, own_mlkem_pub, plaintext)
 }
 
 #[wasm_bindgen(js_name = "encryptMetadata")]
-pub fn encrypt_metadata(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, JsError> {
+pub fn encrypt_metadata(key: Vec<u8>, plaintext: Vec<u8>) -> Result<Vec<u8>, JsError> {
+    let key = Zeroizing::new(key);
+    let key = key.as_slice();
+    let plaintext = Zeroizing::new(plaintext);
+    let plaintext = plaintext.as_slice();
     Ok(sanct_crypto::symmetric::encrypt(key, plaintext)?)
 }
 
 #[wasm_bindgen(js_name = "decryptMetadata")]
-pub fn decrypt_metadata(key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, JsError> {
+pub fn decrypt_metadata(key: Vec<u8>, ciphertext: &[u8]) -> Result<Vec<u8>, JsError> {
+    let key = Zeroizing::new(key);
+    let key = key.as_slice();
     Ok(sanct_crypto::symmetric::decrypt(key, ciphertext)?)
 }
 
 #[wasm_bindgen(js_name = "computeSubjectHash")]
-pub fn compute_subject_hash(threading_key: &[u8], subject: &str) -> Vec<u8> {
+pub fn compute_subject_hash(threading_key: Vec<u8>, subject: String) -> Vec<u8> {
+    let threading_key = Zeroizing::new(threading_key);
+    let threading_key = threading_key.as_slice();
+    let subject = Zeroizing::new(subject);
+    let subject = subject.as_str();
     sanct_crypto::keys::compute_subject_hash(threading_key, subject)
 }
 
 #[wasm_bindgen(js_name = "generateRecoveryPhrase")]
 pub fn generate_recovery_phrase() -> RecoveryResult {
-    let rp = sanct_crypto::recovery::generate_recovery_phrase();
+    let mut rp = sanct_crypto::recovery::generate_recovery_phrase();
     RecoveryResult {
-        phrase: rp.phrase,
+        phrase: std::mem::take(&mut rp.phrase),
         recovery_key: rp.recovery_key.to_vec(),
     }
 }
 
 #[wasm_bindgen(js_name = "recoveryKeyFromPhrase")]
-pub fn recovery_key_from_phrase(phrase: &str) -> Result<Vec<u8>, JsError> {
+pub fn recovery_key_from_phrase(phrase: String) -> Result<Vec<u8>, JsError> {
+    let phrase = Zeroizing::new(phrase);
+    let phrase = phrase.as_str();
     Ok(sanct_crypto::recovery::recovery_key_from_phrase(phrase)?.to_vec())
 }
 
 #[wasm_bindgen(js_name = "hashRecoveryKey")]
-pub fn hash_recovery_key(recovery_key: &[u8]) -> Vec<u8> {
+pub fn hash_recovery_key(recovery_key: Vec<u8>) -> Vec<u8> {
+    let recovery_key = Zeroizing::new(recovery_key);
+    let recovery_key = recovery_key.as_slice();
     sanct_crypto::recovery::hash_recovery_key(recovery_key)
 }
 
 #[wasm_bindgen(js_name = "encryptBundleForRecovery")]
 pub fn encrypt_bundle_for_recovery(
-    recovery_key: &[u8],
-    private_bundle_plaintext: &[u8],
+    recovery_key: Vec<u8>,
+    private_bundle_plaintext: Vec<u8>,
 ) -> Result<Vec<u8>, JsError> {
+    let recovery_key = Zeroizing::new(recovery_key);
+    let recovery_key = recovery_key.as_slice();
+    let private_bundle_plaintext = Zeroizing::new(private_bundle_plaintext);
+    let private_bundle_plaintext = private_bundle_plaintext.as_slice();
     Ok(sanct_crypto::recovery::encrypt_bundle_for_recovery(
         recovery_key,
         private_bundle_plaintext,
@@ -205,9 +240,11 @@ pub fn encrypt_bundle_for_recovery(
 
 #[wasm_bindgen(js_name = "decryptBundleWithRecovery")]
 pub fn decrypt_bundle_with_recovery(
-    recovery_key: &[u8],
+    recovery_key: Vec<u8>,
     recovery_encrypted_bundle: &[u8],
 ) -> Result<Vec<u8>, JsError> {
+    let recovery_key = Zeroizing::new(recovery_key);
+    let recovery_key = recovery_key.as_slice();
     Ok(sanct_crypto::recovery::decrypt_bundle_with_recovery(
         recovery_key,
         recovery_encrypted_bundle,
@@ -215,6 +252,7 @@ pub fn decrypt_bundle_with_recovery(
 }
 
 #[wasm_bindgen]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PgpGeneratedKey {
     pub(crate) armored_public: String,
     pub(crate) armored_secret: String,
@@ -243,6 +281,7 @@ impl PgpGeneratedKey {
 }
 
 #[wasm_bindgen]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PgpImportedKey {
     pub(crate) armored_secret: String,
     pub(crate) armored_public: String,
@@ -334,9 +373,11 @@ impl PgpPublicKeyInfo {
 }
 
 #[wasm_bindgen]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct PgpDecryptResult {
     pub(crate) plaintext: Vec<u8>,
     pub(crate) fingerprint_used: String,
+    pub(crate) signer_fingerprint: Option<String>,
 }
 
 #[wasm_bindgen]
@@ -348,6 +389,14 @@ impl PgpDecryptResult {
     #[wasm_bindgen(getter, js_name = "fingerprintUsed")]
     pub fn fingerprint_used(&self) -> String {
         self.fingerprint_used.clone()
+    }
+    #[wasm_bindgen(getter, js_name = "signatureVerified")]
+    pub fn signature_verified(&self) -> bool {
+        self.signer_fingerprint.is_some()
+    }
+    #[wasm_bindgen(getter, js_name = "signerFingerprint")]
+    pub fn signer_fingerprint(&self) -> Option<String> {
+        self.signer_fingerprint.clone()
     }
 }
 
@@ -362,30 +411,44 @@ fn pgp_to_jserror(e: sanct_crypto::pgp::PgpError) -> JsError {
         PgpError::Encryption(_) => "encryption",
         PgpError::Decryption(_) => "decryption",
         PgpError::Export(_) => "export",
+        PgpError::UnsafePrivateKey => "unsafe_key",
+        PgpError::Verification(_) => "verification",
+        PgpError::ResourceLimit => "resource_limit",
     };
     JsError::new(&format!("{code}: {e}"))
 }
 
 #[wasm_bindgen(js_name = "pgpGenerateKey")]
-pub fn pgp_generate_key(name: &str, email: &str) -> Result<PgpGeneratedKey, JsError> {
-    let key = sanct_crypto::pgp::generate_key(name, email).map_err(pgp_to_jserror)?;
+pub fn pgp_generate_key(name: String, email: String) -> Result<PgpGeneratedKey, JsError> {
+    let name = Zeroizing::new(name);
+    let name = name.as_str();
+    let email = Zeroizing::new(email);
+    let email = email.as_str();
+    let mut key = sanct_crypto::pgp::generate_key(name, email).map_err(pgp_to_jserror)?;
     Ok(PgpGeneratedKey {
-        armored_public: key.armored_public,
-        armored_secret: key.armored_secret,
-        fingerprint: key.fingerprint,
-        primary_uid: key.primary_uid,
+        armored_public: std::mem::take(&mut key.armored_public),
+        armored_secret: std::mem::take(&mut key.armored_secret),
+        fingerprint: std::mem::take(&mut key.fingerprint),
+        primary_uid: std::mem::take(&mut key.primary_uid),
     })
 }
 
 #[wasm_bindgen(js_name = "pgpImportKey")]
-pub fn pgp_import_key(input: &[u8], passphrase: Option<String>) -> Result<PgpImportedKey, JsError> {
-    let imported =
-        sanct_crypto::pgp::import_key(input, passphrase.as_deref()).map_err(pgp_to_jserror)?;
+pub fn pgp_import_key(
+    input: Vec<u8>,
+    passphrase: Option<String>,
+) -> Result<PgpImportedKey, JsError> {
+    let input = Zeroizing::new(input);
+    let input = input.as_slice();
+    let passphrase = passphrase.map(Zeroizing::new);
+    let mut imported =
+        sanct_crypto::pgp::import_key(input, passphrase.as_ref().map(|p| p.as_str()))
+            .map_err(pgp_to_jserror)?;
     Ok(PgpImportedKey {
-        armored_secret: imported.armored_secret_unprotected,
-        armored_public: imported.armored_public,
-        fingerprint: imported.fingerprint,
-        uids: imported.uids,
+        armored_secret: std::mem::take(&mut imported.armored_secret_unprotected),
+        armored_public: std::mem::take(&mut imported.armored_public),
+        fingerprint: std::mem::take(&mut imported.fingerprint),
+        uids: std::mem::take(&mut imported.uids),
         created_at_unix: imported.created_at_unix,
         expires_at_unix: imported.expires_at_unix,
         is_expired: imported.is_expired,
@@ -394,7 +457,11 @@ pub fn pgp_import_key(input: &[u8], passphrase: Option<String>) -> Result<PgpImp
 }
 
 #[wasm_bindgen(js_name = "pgpExportKey")]
-pub fn pgp_export_key(unprotected_armored: &[u8], passphrase: &str) -> Result<String, JsError> {
+pub fn pgp_export_key(unprotected_armored: Vec<u8>, passphrase: String) -> Result<String, JsError> {
+    let unprotected_armored = Zeroizing::new(unprotected_armored);
+    let unprotected_armored = unprotected_armored.as_slice();
+    let passphrase = Zeroizing::new(passphrase);
+    let passphrase = passphrase.as_str();
     sanct_crypto::pgp::export_key(unprotected_armored, passphrase).map_err(pgp_to_jserror)
 }
 
@@ -426,12 +493,44 @@ pub fn pgp_decrypt_message(
     armored_secrets: Vec<js_sys::Uint8Array>,
     armored_ciphertext: &[u8],
 ) -> Result<PgpDecryptResult, JsError> {
-    let secrets: Vec<Vec<u8>> = armored_secrets.iter().map(|a| a.to_vec()).collect();
-    let res =
+    let secrets = Zeroizing::new(
+        armored_secrets
+            .iter()
+            .map(|a| a.to_vec())
+            .collect::<Vec<Vec<u8>>>(),
+    );
+    let mut res =
         sanct_crypto::pgp::decrypt_message(&secrets, armored_ciphertext).map_err(pgp_to_jserror)?;
     Ok(PgpDecryptResult {
-        plaintext: res.plaintext,
-        fingerprint_used: res.fingerprint_used,
+        plaintext: std::mem::take(&mut res.plaintext),
+        fingerprint_used: std::mem::take(&mut res.fingerprint_used),
+        signer_fingerprint: std::mem::take(&mut res.signer_fingerprint),
+    })
+}
+
+#[wasm_bindgen(js_name = "pgpDecryptMessageVerified")]
+pub fn pgp_decrypt_message_verified(
+    armored_secrets: Vec<js_sys::Uint8Array>,
+    armored_ciphertext: &[u8],
+    trusted_signers: Vec<js_sys::Uint8Array>,
+) -> Result<PgpDecryptResult, JsError> {
+    let secrets = Zeroizing::new(
+        armored_secrets
+            .iter()
+            .map(|a| a.to_vec())
+            .collect::<Vec<Vec<u8>>>(),
+    );
+    let signers = trusted_signers
+        .iter()
+        .map(|a| a.to_vec())
+        .collect::<Vec<_>>();
+    let mut result =
+        sanct_crypto::pgp::decrypt_message_verified(&secrets, armored_ciphertext, &signers)
+            .map_err(pgp_to_jserror)?;
+    Ok(PgpDecryptResult {
+        plaintext: std::mem::take(&mut result.plaintext),
+        fingerprint_used: std::mem::take(&mut result.fingerprint_used),
+        signer_fingerprint: std::mem::take(&mut result.signer_fingerprint),
     })
 }
 
@@ -442,11 +541,12 @@ mod tests {
     #[test]
     fn master_key_and_identity_roundtrip() {
         let salt = generate_salt();
-        let master_key = derive_master_key("correct horse battery staple", &salt).unwrap();
+        let master_key =
+            derive_master_key("correct horse battery staple".to_owned(), &salt).unwrap();
 
-        let identity = generate_identity_keys(&master_key).unwrap();
+        let identity = generate_identity_keys(master_key.to_vec()).unwrap();
         let private =
-            decrypt_private_keys(&master_key, &identity.encrypted_private_bundle).unwrap();
+            decrypt_private_keys(master_key.to_vec(), &identity.encrypted_private_bundle).unwrap();
 
         assert_eq!(identity.x25519_public.len(), 32);
         assert!(!identity.mlkem768_public.is_empty());
@@ -458,29 +558,37 @@ mod tests {
     #[test]
     fn envelope_roundtrip() {
         let master_key = [0x42; 32];
-        let identity = generate_identity_keys(&master_key).unwrap();
+        let identity = generate_identity_keys(master_key.to_vec()).unwrap();
         let private =
-            decrypt_private_keys(&master_key, &identity.encrypted_private_bundle).unwrap();
+            decrypt_private_keys(master_key.to_vec(), &identity.encrypted_private_bundle).unwrap();
 
         let plaintext = b"wasm envelope roundtrip";
         let sealed = encrypt_message(
             &identity.x25519_public,
             &identity.mlkem768_public,
-            plaintext,
+            plaintext.to_vec(),
         )
         .unwrap();
-        let decrypted =
-            decrypt_message(&private.x25519_secret, &private.mlkem768_secret, &sealed).unwrap();
+        let decrypted = decrypt_message(
+            private.x25519_secret.to_vec(),
+            private.mlkem768_secret.to_vec(),
+            &sealed,
+        )
+        .unwrap();
         assert_eq!(decrypted, plaintext);
 
         let draft = encrypt_draft(
             &identity.x25519_public,
             &identity.mlkem768_public,
-            plaintext,
+            plaintext.to_vec(),
         )
         .unwrap();
-        let decrypted_draft =
-            decrypt_message(&private.x25519_secret, &private.mlkem768_secret, &draft).unwrap();
+        let decrypted_draft = decrypt_message(
+            private.x25519_secret.to_vec(),
+            private.mlkem768_secret.to_vec(),
+            &draft,
+        )
+        .unwrap();
         assert_eq!(decrypted_draft, plaintext);
     }
 
@@ -489,11 +597,11 @@ mod tests {
         let key = [7u8; 32];
         let plaintext = br#"{"subject":"Plans","from":"alice@sanct.local"}"#;
 
-        let encrypted = encrypt_metadata(&key, plaintext).unwrap();
-        let decrypted = decrypt_metadata(&key, &encrypted).unwrap();
+        let encrypted = encrypt_metadata(key.to_vec(), plaintext.to_vec()).unwrap();
+        let decrypted = decrypt_metadata(key.to_vec(), &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
 
-        let hash = compute_subject_hash(&key, "Re: Plans");
+        let hash = compute_subject_hash(key.to_vec(), "Re: Plans".to_owned());
         let expected = sanct_crypto::keys::compute_subject_hash(&key, "Plans");
         assert_eq!(hash, expected);
     }
@@ -501,26 +609,30 @@ mod tests {
     #[test]
     fn recipient_sealing_roundtrip() {
         let master_key = [0x24; 32];
-        let identity = generate_identity_keys(&master_key).unwrap();
+        let identity = generate_identity_keys(master_key.to_vec()).unwrap();
         let private =
-            decrypt_private_keys(&master_key, &identity.encrypted_private_bundle).unwrap();
+            decrypt_private_keys(master_key.to_vec(), &identity.encrypted_private_bundle).unwrap();
 
         let body = b"sealed body";
         let metadata = br#"{"subject":"sealed metadata"}"#;
 
-        let sealed_body =
-            seal_for_recipient(&identity.x25519_public, &identity.mlkem768_public, body).unwrap();
+        let sealed_body = seal_for_recipient(
+            &identity.x25519_public,
+            &identity.mlkem768_public,
+            body.to_vec(),
+        )
+        .unwrap();
         let sealed_metadata = seal_metadata_for_recipient(
             &identity.x25519_public,
             &identity.mlkem768_public,
-            metadata,
+            metadata.to_vec(),
         )
         .unwrap();
 
         assert_eq!(
             decrypt_message(
-                &private.x25519_secret,
-                &private.mlkem768_secret,
+                private.x25519_secret.to_vec(),
+                private.mlkem768_secret.to_vec(),
                 &sealed_body,
             )
             .unwrap(),
@@ -528,8 +640,8 @@ mod tests {
         );
         assert_eq!(
             decrypt_message(
-                &private.x25519_secret,
-                &private.mlkem768_secret,
+                private.x25519_secret.to_vec(),
+                private.mlkem768_secret.to_vec(),
                 &sealed_metadata,
             )
             .unwrap(),
@@ -540,16 +652,16 @@ mod tests {
     #[test]
     fn recovery_roundtrip() {
         let result = generate_recovery_phrase();
-        let derived = recovery_key_from_phrase(&result.phrase).unwrap();
+        let derived = recovery_key_from_phrase(result.phrase.to_owned()).unwrap();
         assert_eq!(derived, result.recovery_key);
 
         let payload = b"encrypted-private-bundle";
-        let encrypted = encrypt_bundle_for_recovery(&derived, payload).unwrap();
-        let decrypted = decrypt_bundle_with_recovery(&derived, &encrypted).unwrap();
+        let encrypted = encrypt_bundle_for_recovery(derived.to_vec(), payload.to_vec()).unwrap();
+        let decrypted = decrypt_bundle_with_recovery(derived.to_vec(), &encrypted).unwrap();
         assert_eq!(decrypted, payload);
 
         assert_eq!(
-            hash_recovery_key(&derived),
+            hash_recovery_key(derived.to_vec()),
             sanct_crypto::recovery::hash_recovery_key(&result.recovery_key)
         );
     }

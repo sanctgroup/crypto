@@ -1,6 +1,6 @@
 {
   "name": "@sanct/crypto-wasm",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -8,7 +8,12 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build:wasm": "bash scripts/build-wasm.sh"
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "bench": "node scripts/benchmark.mjs",
+    "test:wasm": "node scripts/test-wasm.mjs",
+    "test:encoding": "node --test scripts/encoding.test.mjs",
+    "test:js": "node --test scripts/*.test.mjs",
+    "bench:encoding": "node scripts/benchmark-encoding.mjs"
   },
   "files": [
     "src",

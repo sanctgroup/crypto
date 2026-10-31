@@ -1,6 +1,7 @@
 use crate::hybrid;
 use crate::symmetric;
 use crate::CryptoError;
+use zeroize::Zeroizing;
 
 const ENVELOPE_VERSION: u8 = 2;
 const ENVELOPE_VERSION_LEGACY_V1: u8 = 1;
@@ -16,6 +17,41 @@ pub struct SealedEnvelope {
 }
 
 impl SealedEnvelope {
+    pub fn seal_to_bytes(
+        recipient_x25519_public: &[u8],
+        recipient_mlkem_public: &[u8],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        let encap = hybrid::encapsulate(recipient_x25519_public, recipient_mlkem_public)?;
+        let mut output = Vec::with_capacity(HEADER_LEN + 24 + plaintext.len() + 16);
+        output.push(ENVELOPE_VERSION);
+        output.extend_from_slice(&encap.x25519_ephemeral_public);
+        output.extend_from_slice(&encap.mlkem_ciphertext);
+        symmetric::encrypt_into(&encap.shared_secret, plaintext, output)
+    }
+
+    pub fn open_bytes(
+        x25519_private: &[u8],
+        mlkem_private: &[u8],
+        data: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        if data.len() < HEADER_LEN + 24 + 16 {
+            return Err(CryptoError::InvalidCiphertext);
+        }
+        Self::open_payload(
+            data[0],
+            data[1..1 + X25519_PUB_LEN]
+                .try_into()
+                .map_err(|_| CryptoError::InvalidCiphertext)?,
+            data[1 + X25519_PUB_LEN..HEADER_LEN]
+                .try_into()
+                .map_err(|_| CryptoError::InvalidCiphertext)?,
+            &data[HEADER_LEN..],
+            x25519_private,
+            mlkem_private,
+        )
+    }
+
     pub fn seal(
         recipient_x25519_public: &[u8],
         recipient_mlkem_public: &[u8],
@@ -37,23 +73,41 @@ impl SealedEnvelope {
         x25519_private: &[u8],
         mlkem_private: &[u8],
     ) -> Result<Vec<u8>, CryptoError> {
-        let shared_secret = match self.version {
+        Self::open_payload(
+            self.version,
+            &self.x25519_ephemeral_public,
+            &self.mlkem_ciphertext,
+            &self.encrypted_payload,
+            x25519_private,
+            mlkem_private,
+        )
+    }
+
+    fn open_payload(
+        version: u8,
+        x25519_ephemeral_public: &[u8; X25519_PUB_LEN],
+        mlkem_ciphertext: &[u8; hybrid::MLKEM_CIPHERTEXT_LEN],
+        encrypted_payload: &[u8],
+        x25519_private: &[u8],
+        mlkem_private: &[u8],
+    ) -> Result<Vec<u8>, CryptoError> {
+        let shared_secret = Zeroizing::new(match version {
             ENVELOPE_VERSION => hybrid::decapsulate(
                 x25519_private,
                 mlkem_private,
-                &self.x25519_ephemeral_public,
-                &self.mlkem_ciphertext,
+                x25519_ephemeral_public,
+                mlkem_ciphertext,
             )?,
             ENVELOPE_VERSION_LEGACY_V1 => hybrid::decapsulate_v1(
                 x25519_private,
                 mlkem_private,
-                &self.x25519_ephemeral_public,
-                &self.mlkem_ciphertext,
+                x25519_ephemeral_public,
+                mlkem_ciphertext,
             )?,
-            _ => return Err(CryptoError::UnsupportedVersion(self.version)),
-        };
+            _ => return Err(CryptoError::UnsupportedVersion(version)),
+        });
 
-        symmetric::decrypt(&shared_secret, &self.encrypted_payload)
+        symmetric::decrypt(shared_secret.as_ref(), encrypted_payload)
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -92,8 +146,8 @@ impl SealedEnvelope {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hybrid::MlKemEncoding;
     use crate::hybrid::{MlKemKeyPair, X25519KeyPair};
-    use ml_kem::EncodedSizeUser;
 
     #[test]
     fn test_seal_open_roundtrip() {
@@ -245,9 +299,7 @@ mod tests {
         )
         .unwrap();
 
-        let other_eph = x25519_dalek::PublicKey::from(
-            &x25519_dalek::EphemeralSecret::random_from_rng(rand::rngs::OsRng),
-        );
+        let other_eph = x25519_dalek::PublicKey::from(&x25519_dalek::EphemeralSecret::random());
         let mut tampered = SealedEnvelope {
             version: sealed.version,
             x25519_ephemeral_public: other_eph.to_bytes(),
@@ -324,5 +376,51 @@ mod tests {
             )
             .unwrap();
         assert_eq!(plaintext.as_slice(), b"legacy v1 message");
+        assert_eq!(
+            SealedEnvelope::open_bytes(
+                recipient_x.secret.as_bytes(),
+                recipient_m.decapsulation_key.as_bytes().as_slice(),
+                &v1_envelope.to_bytes(),
+            )
+            .unwrap(),
+            plaintext,
+        );
+    }
+
+    #[test]
+    fn wire_api_interoperates_and_rejects_corruption() {
+        let x = X25519KeyPair::generate();
+        let m = MlKemKeyPair::generate();
+        let public = m.encapsulation_key.as_bytes();
+        let private = m.decapsulation_key.as_bytes();
+        for size in [0, 1, 1024, 1024 * 1024] {
+            let plaintext = vec![0x42; size];
+            let bytes =
+                SealedEnvelope::seal_to_bytes(x.public.as_bytes(), &public, &plaintext).unwrap();
+            let parsed = SealedEnvelope::from_bytes(&bytes).unwrap();
+            assert_eq!(
+                parsed.open(x.secret.as_bytes(), &private).unwrap(),
+                plaintext
+            );
+            let owned = SealedEnvelope::seal(x.public.as_bytes(), &public, &plaintext).unwrap();
+            assert_eq!(
+                SealedEnvelope::open_bytes(x.secret.as_bytes(), &private, &owned.to_bytes())
+                    .unwrap(),
+                plaintext
+            );
+            for index in [0, 1, 33, HEADER_LEN, bytes.len() - 1] {
+                let mut corrupted = bytes.clone();
+                corrupted[index] ^= 0x80;
+                assert!(
+                    SealedEnvelope::open_bytes(x.secret.as_bytes(), &private, &corrupted).is_err()
+                );
+            }
+            for len in [0, 1, HEADER_LEN - 1, HEADER_LEN, bytes.len() - 1] {
+                assert!(
+                    SealedEnvelope::open_bytes(x.secret.as_bytes(), &private, &bytes[..len])
+                        .is_err()
+                );
+            }
+        }
     }
 }

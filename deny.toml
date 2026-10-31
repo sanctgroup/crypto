@@ -3,12 +3,7 @@ all-features = true
 
 [advisories]
 yanked = "warn"
-ignore = [
-    # Marvin Attack timing sidechannel in `rsa` 0.9.x. Pulled in transitively by
-    # the `pgp` crate. No upstream fix available; mitigation is to avoid using
-    # RSA in network-observable timing contexts (we use it only locally).
-    "RUSTSEC-2023-0071",
-]
+ignore = []
 
 [licenses]
 allow = [

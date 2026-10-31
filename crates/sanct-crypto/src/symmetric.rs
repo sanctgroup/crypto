@@ -1,13 +1,20 @@
-use chacha20poly1305::aead::{Aead, KeyInit};
+use chacha20poly1305::aead::{Aead, AeadInOut, KeyInit};
 use chacha20poly1305::XChaCha20Poly1305;
-use rand::rngs::OsRng;
-use rand::RngCore;
+use zeroize::Zeroizing;
 
 use crate::CryptoError;
 
 const NONCE_LEN: usize = 24;
 
 pub fn encrypt(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    encrypt_into(key, plaintext, Vec::new())
+}
+
+pub(crate) fn encrypt_into(
+    key: &[u8],
+    plaintext: &[u8],
+    output: Vec<u8>,
+) -> Result<Vec<u8>, CryptoError> {
     if key.len() != 32 {
         return Err(CryptoError::InvalidKeyLength(key.len()));
     }
@@ -16,16 +23,18 @@ pub fn encrypt(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         .map_err(|_| CryptoError::InvalidKeyLength(key.len()))?;
 
     let mut nonce = [0u8; NONCE_LEN];
-    OsRng.fill_bytes(&mut nonce);
+    getrandom::fill(&mut nonce).map_err(|_| CryptoError::EncryptionFailed)?;
 
-    let ciphertext = cipher
-        .encrypt(&nonce.into(), plaintext)
-        .map_err(|_| CryptoError::EncryptionFailed)?;
-
-    let mut output = Vec::with_capacity(NONCE_LEN + ciphertext.len());
+    let mut output = Zeroizing::new(output);
+    output.reserve(NONCE_LEN + plaintext.len() + 16);
     output.extend_from_slice(&nonce);
-    output.extend_from_slice(&ciphertext);
-    Ok(output)
+    let payload_start = output.len();
+    output.extend_from_slice(plaintext);
+    let tag = cipher
+        .encrypt_inout_detached(&nonce.into(), b"", (&mut output[payload_start..]).into())
+        .map_err(|_| CryptoError::EncryptionFailed)?;
+    output.extend_from_slice(&tag);
+    Ok(std::mem::take(&mut *output))
 }
 
 pub fn decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
@@ -40,7 +49,9 @@ pub fn decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         .map_err(|_| CryptoError::InvalidKeyLength(key.len()))?;
 
     let (nonce, ciphertext) = data.split_at(NONCE_LEN);
-    let nonce = chacha20poly1305::XNonce::from_slice(nonce);
+    let nonce = nonce
+        .try_into()
+        .map_err(|_| CryptoError::InvalidCiphertext)?;
 
     cipher
         .decrypt(nonce, ciphertext)
