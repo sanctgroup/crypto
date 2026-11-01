@@ -67,3 +67,14 @@ for (const [producer, consumer] of [[api, previous], [previous, api]]) {
 generated.free();
 identity.free();
 console.log('WASM interoperability, malformed input, tamper, key-validation and OpenPGP checks passed.');
+
+for (const fixture of ['rsa-secret.asc', 'p256-secret.asc', 'p256-encryption-secret.asc']) {
+  const wire = new Uint8Array(await readFile(resolve(import.meta.dirname, '../crates/sanct-crypto/tests/fixtures', fixture)));
+  assert.throws(() => api.pgpImportKey(wire));
+  assert.throws(() => api.pgpKeyInfo(wire));
+  assert.throws(() => api.pgpDecryptMessage([wire], new Uint8Array()));
+}
+const unsupportedRecipient = new Uint8Array(await readFile(resolve(import.meta.dirname, '../crates/sanct-crypto/tests/fixtures/p256-encryption-public.asc')));
+assert.throws(() => api.pgpKeyInfo(unsupportedRecipient));
+assert.throws(() => api.pgpEncryptToRecipients([unsupportedRecipient], key));
+console.log('Unsupported OpenPGP provider rejection checks passed.');

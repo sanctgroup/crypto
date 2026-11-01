@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+exclude = ["vendor/pgp"]
 members = [
     "crates/sanct-crypto",
     "crates/sanct-wasm",
@@ -20,7 +21,7 @@ zeroize = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-pgp = { version = "0.21", default-features = false }
+pgp = { path = "vendor/pgp", version = "=0.21.0", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "wasmbind"] }
 smallvec = "1"
 

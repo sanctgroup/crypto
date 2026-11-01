@@ -1,0 +1,590 @@
+use std::io::{self, BufRead};
+
+use byteorder::WriteBytesExt;
+use bytes::{Bytes, BytesMut};
+use log::debug;
+
+use rand::{CryptoRng, Rng};
+use sha2::Sha256;
+use zeroize::Zeroizing;
+
+use crate::{
+    composed::{PlainSessionKey, RawSessionKey},
+    crypto::{aead::AeadAlgorithm, sym::SymmetricKeyAlgorithm},
+    errors::{
+        ensure, ensure_eq, format_err, unimplemented_err, unsupported_err, InvalidInputSnafu,
+        Result,
+    },
+    packet::{PacketHeader, PacketTrait},
+    parsing_reader::BufReadParsing,
+    ser::Serialize,
+    types::{Password, SkeskVersion, StringToKey, Tag},
+};
+
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+pub enum SymKeyEncryptedSessionKey {
+    V4 {
+        packet_header: PacketHeader,
+        sym_algorithm: SymmetricKeyAlgorithm,
+        s2k: StringToKey,
+        #[debug("{}", hex::encode(encrypted_key))]
+        encrypted_key: Bytes,
+    },
+    V5 {
+        packet_header: PacketHeader,
+        sym_algorithm: SymmetricKeyAlgorithm,
+        s2k: StringToKey,
+        aead: AeadProps,
+        #[debug("{}", hex::encode(encrypted_key))]
+        encrypted_key: Bytes,
+    },
+    V6 {
+        packet_header: PacketHeader,
+        sym_algorithm: SymmetricKeyAlgorithm,
+        s2k: StringToKey,
+        aead: AeadProps,
+        #[debug("{}", hex::encode(encrypted_key))]
+        encrypted_key: Bytes,
+    },
+    Other {
+        packet_header: PacketHeader,
+        #[debug("{:X}", version)]
+        version: u8,
+        #[debug("{}", hex::encode(data))]
+        data: Bytes,
+    },
+}
+
+#[derive(derive_more::Debug, Clone, PartialEq, Eq)]
+
+pub enum AeadProps {
+    Eax {
+        #[debug("{}", hex::encode(iv))]
+        iv: [u8; 16],
+    },
+    Ocb {
+        #[debug("{}", hex::encode(iv))]
+        iv: [u8; 15],
+    },
+    Gcm {
+        #[debug("{}", hex::encode(iv))]
+        iv: [u8; 12],
+    },
+}
+
+impl From<&AeadProps> for AeadAlgorithm {
+    fn from(value: &AeadProps) -> Self {
+        match value {
+            AeadProps::Eax { .. } => AeadAlgorithm::Eax,
+            AeadProps::Gcm { .. } => AeadAlgorithm::Gcm,
+            AeadProps::Ocb { .. } => AeadAlgorithm::Ocb,
+        }
+    }
+}
+
+impl AeadProps {
+    fn iv(&self) -> &[u8] {
+        match self {
+            AeadProps::Eax { iv, .. } => iv,
+            AeadProps::Ocb { iv, .. } => iv,
+            AeadProps::Gcm { iv, .. } => iv,
+        }
+    }
+}
+
+impl SymKeyEncryptedSessionKey {
+    pub fn try_from_reader<B: BufRead>(packet_header: PacketHeader, mut i: B) -> Result<Self> {
+        ensure_eq!(
+            packet_header.tag(),
+            Tag::SymKeyEncryptedSessionKey,
+            "invalid tag"
+        );
+
+        let version = i.read_u8()?;
+        match version {
+            4 => parse_v4(packet_header, i),
+            5 => parse_v5(packet_header, i),
+            6 => parse_v6(packet_header, i),
+            _ => {
+                let data = i.rest()?.freeze();
+                Ok(Self::Other {
+                    packet_header,
+                    version,
+                    data,
+                })
+            }
+        }
+    }
+
+    pub fn sym_algorithm(&self) -> Option<SymmetricKeyAlgorithm> {
+        match self {
+            Self::V4 {
+                ref sym_algorithm, ..
+            } => Some(*sym_algorithm),
+            Self::V5 {
+                ref sym_algorithm, ..
+            } => Some(*sym_algorithm),
+            Self::V6 {
+                ref sym_algorithm, ..
+            } => Some(*sym_algorithm),
+            Self::Other { .. } => None,
+        }
+    }
+
+    pub fn s2k(&self) -> Option<&StringToKey> {
+        match self {
+            Self::V4 { ref s2k, .. } => Some(s2k),
+            Self::V5 { ref s2k, .. } => Some(s2k),
+            Self::V6 { ref s2k, .. } => Some(s2k),
+            Self::Other { .. } => None,
+        }
+    }
+
+    pub fn is_supported(&self) -> bool {
+        match self {
+            Self::V4 { .. } | Self::V6 { .. } | Self::V5 { .. } => true,
+            Self::Other { .. } => false,
+        }
+    }
+
+    pub fn version(&self) -> SkeskVersion {
+        match self {
+            Self::V4 { .. } => SkeskVersion::V4,
+            Self::V5 { .. } => SkeskVersion::V5,
+            Self::V6 { .. } => SkeskVersion::V6,
+            Self::Other { version, .. } => SkeskVersion::Other(*version),
+        }
+    }
+
+    pub fn decrypt(&self, key: impl AsRef<[u8]>) -> Result<PlainSessionKey> {
+        debug!("decrypt session key {:?}", self.version());
+        let key = key.as_ref();
+
+        let Some(decrypted_key) = self.encrypted_key() else {
+            unsupported_err!("SKESK {:?}", self.version());
+        };
+
+        let mut decrypted_key: BytesMut = decrypted_key.clone().into();
+        match self {
+            Self::V4 { sym_algorithm, .. } => {
+                let iv = vec![0u8; sym_algorithm.block_size()];
+                sym_algorithm.decrypt_with_iv_regular(key, &iv, &mut decrypted_key)?;
+
+                let sym_alg = SymmetricKeyAlgorithm::from(decrypted_key[0]);
+                let key = RawSessionKey::from(&decrypted_key[1..]);
+
+                match sym_alg.key_size() {
+                    0 => Err(format_err!("Unsupported symmetric algorithm {:?}", sym_alg)),
+
+                    size if size != key.len() => Err(format_err!(
+                        "Inconsistent key length {} for symmetric algorithm {:?}",
+                        key.len(),
+                        sym_alg
+                    )),
+
+                    _ => Ok(PlainSessionKey::V3_4 { key, sym_alg }),
+                }
+            }
+            Self::V5 {
+                sym_algorithm,
+                aead,
+                ..
+            } => {
+                let ikm = key;
+
+                let alg = AeadAlgorithm::from(aead);
+
+                let info = [
+                    Tag::SymKeyEncryptedSessionKey.encode(),
+                    0x05,
+                    (*sym_algorithm).into(),
+                    alg.into(),
+                ];
+
+                alg.decrypt_in_place(sym_algorithm, ikm, aead.iv(), &info, &mut decrypted_key)?;
+
+                Ok(PlainSessionKey::V5 {
+                    key: RawSessionKey::from(decrypted_key.to_vec()),
+                })
+            }
+            Self::V6 {
+                sym_algorithm,
+                aead,
+                ..
+            } => {
+                let ikm = key;
+
+                let salt = None;
+                let alg = AeadAlgorithm::from(aead);
+
+                let info = [
+                    Tag::SymKeyEncryptedSessionKey.encode(),
+                    0x06,
+                    (*sym_algorithm).into(),
+                    alg.into(),
+                ];
+
+                let hk = hkdf::Hkdf::<Sha256>::new(salt, ikm);
+                let mut okm = [0u8; 42];
+                hk.expand(&info, &mut okm).expect("42");
+
+                alg.decrypt_in_place(sym_algorithm, &okm, aead.iv(), &info, &mut decrypted_key)?;
+
+                Ok(PlainSessionKey::V6 {
+                    key: decrypted_key.to_vec().into(),
+                })
+            }
+            Self::Other { version, .. } => {
+                unsupported_err!("SKESK version {}", version);
+            }
+        }
+    }
+
+    pub fn encrypted_key(&self) -> Option<&Bytes> {
+        match self {
+            Self::V4 {
+                ref encrypted_key, ..
+            } => Some(encrypted_key),
+            Self::V5 {
+                ref encrypted_key, ..
+            } => Some(encrypted_key),
+            Self::V6 {
+                ref encrypted_key, ..
+            } => Some(encrypted_key),
+            Self::Other { .. } => None,
+        }
+    }
+
+    pub fn encrypt_v4(
+        msg_pw: &Password,
+        session_key: &RawSessionKey,
+        s2k: StringToKey,
+        alg: SymmetricKeyAlgorithm,
+    ) -> Result<Self> {
+        ensure!(
+            s2k.uses_salt(),
+            "Can not use an s2k algorithm without a salt: {:?}",
+            s2k
+        );
+
+        ensure!(
+            !s2k.known_weak_hash_algo(),
+            "Weak hash algorithm in S2K not allowed for v6 {:?}",
+            s2k
+        );
+
+        let key = s2k.derive_key(&msg_pw.read(), alg.key_size())?;
+
+        let mut private_key = Zeroizing::new(Vec::with_capacity(session_key.len()));
+        private_key.push(u8::from(alg));
+        private_key.extend(session_key.as_ref());
+
+        let iv = vec![0u8; alg.block_size()];
+        let mut encrypted_key = private_key.to_vec();
+        alg.encrypt_with_iv_regular(key.as_ref(), &iv, &mut encrypted_key)?;
+
+        let len = 2 + s2k.write_len() + encrypted_key.len();
+        let packet_header =
+            PacketHeader::new_fixed(Tag::SymKeyEncryptedSessionKey, len.try_into()?);
+
+        Ok(SymKeyEncryptedSessionKey::V4 {
+            packet_header,
+            s2k,
+            sym_algorithm: alg,
+            encrypted_key: encrypted_key.into(),
+        })
+    }
+
+    pub fn encrypt_v6<R: CryptoRng + Rng>(
+        mut rng: R,
+        msg_pw: &Password,
+        session_key: &RawSessionKey,
+        s2k: StringToKey,
+        sym_algorithm: SymmetricKeyAlgorithm,
+        aead: AeadAlgorithm,
+    ) -> Result<Self> {
+        ensure!(
+            s2k.uses_salt(),
+            "Can not use an s2k algorithm without a salt: {:?}",
+            s2k
+        );
+
+        ensure!(
+            !s2k.known_weak_hash_algo(),
+            "Weak hash algorithm in S2K not allowed for v6 {:?}",
+            s2k
+        );
+
+        let ikm = s2k.derive_key(&msg_pw.read(), sym_algorithm.key_size())?;
+
+        let salt = None;
+
+        let info = [
+            Tag::SymKeyEncryptedSessionKey.encode(),
+            0x06,
+            sym_algorithm.into(),
+            aead.into(),
+        ];
+
+        let hk = hkdf::Hkdf::<Sha256>::new(salt, ikm.as_ref());
+        let mut okm = [0u8; 42];
+        hk.expand(&info, &mut okm).expect("42");
+
+        let mut iv = vec![0; aead.iv_size()];
+        rng.fill_bytes(&mut iv);
+
+        let mut encrypted_key: BytesMut = session_key.as_ref().into();
+        aead.encrypt_in_place(&sym_algorithm, &okm, &iv, &info, &mut encrypted_key)?;
+
+        let aead = match aead {
+            AeadAlgorithm::Eax => AeadProps::Eax {
+                iv: iv.try_into().expect("checked"),
+            },
+            AeadAlgorithm::Ocb => AeadProps::Ocb {
+                iv: iv.try_into().expect("checked"),
+            },
+            AeadAlgorithm::Gcm => AeadProps::Gcm {
+                iv: iv.try_into().expect("checked"),
+            },
+            _ => {
+                unimplemented_err!("AEAD {:?}", aead);
+            }
+        };
+        let len = 3 + s2k.write_len() + 1 + aead.iv().len() + 1 + encrypted_key.len();
+
+        let packet_header =
+            PacketHeader::new_fixed(Tag::SymKeyEncryptedSessionKey, len.try_into()?);
+
+        Ok(SymKeyEncryptedSessionKey::V6 {
+            packet_header,
+            sym_algorithm,
+            s2k,
+            aead,
+            encrypted_key: encrypted_key.into(),
+        })
+    }
+}
+
+fn parse_v4<B: BufRead>(
+    packet_header: PacketHeader,
+    mut i: B,
+) -> Result<SymKeyEncryptedSessionKey> {
+    let sym_alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
+    let s2k = StringToKey::try_from_reader(&mut i)?;
+
+    Ok(SymKeyEncryptedSessionKey::V4 {
+        packet_header,
+        sym_algorithm: sym_alg,
+        s2k,
+        encrypted_key: i.rest()?.freeze(),
+    })
+}
+
+fn parse_v5<B: BufRead>(
+    packet_header: PacketHeader,
+    mut i: B,
+) -> Result<SymKeyEncryptedSessionKey> {
+    let sym_alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
+
+    let mode = i.read_u8()?;
+
+    ensure_eq!(mode, 2, "Unsupported mode {}", mode);
+    let aead = AeadAlgorithm::Ocb;
+
+    let s2k = StringToKey::try_from_reader(&mut i)?;
+
+    let iv = i.take_bytes(aead.iv_size())?;
+
+    let aead_tag_size = aead.tag_size().unwrap_or_default();
+
+    let esk = i.take_bytes(sym_alg.key_size() + aead_tag_size)?;
+
+    if esk.len() < aead_tag_size {
+        return Err(InvalidInputSnafu.build());
+    }
+
+    let aead = match aead {
+        AeadAlgorithm::Eax => AeadProps::Eax {
+            iv: iv.as_ref().try_into().expect("checked"),
+        },
+        AeadAlgorithm::Ocb => AeadProps::Ocb {
+            iv: iv.as_ref().try_into().expect("checked"),
+        },
+        AeadAlgorithm::Gcm => AeadProps::Gcm {
+            iv: iv.as_ref().try_into().expect("checked"),
+        },
+        _ => unsupported_err!("aead algorithm for v5: {:?}", aead),
+    };
+
+    Ok(SymKeyEncryptedSessionKey::V5 {
+        packet_header,
+        sym_algorithm: sym_alg,
+        aead,
+        s2k,
+        encrypted_key: esk.freeze(),
+    })
+}
+
+fn parse_v6<B: BufRead>(
+    packet_header: PacketHeader,
+    mut i: B,
+) -> Result<SymKeyEncryptedSessionKey> {
+    let _count = i.read_u8()?;
+    let sym_alg = i.read_u8().map(SymmetricKeyAlgorithm::from)?;
+    let aead = i.read_u8().map(AeadAlgorithm::from)?;
+    let s2k_len = i.read_u8()?;
+    let s2k_data = i.read_take(s2k_len.into());
+    let s2k = StringToKey::try_from_reader(s2k_data)?;
+    let iv = i.take_bytes(aead.iv_size())?;
+    let aead_tag_size = aead.tag_size().unwrap_or_default();
+    let esk = i.rest()?;
+    if esk.len() < aead_tag_size {
+        return Err(InvalidInputSnafu.build());
+    }
+
+    let aead = match aead {
+        AeadAlgorithm::Eax => AeadProps::Eax {
+            iv: iv.as_ref().try_into().expect("checked"),
+        },
+        AeadAlgorithm::Ocb => AeadProps::Ocb {
+            iv: iv.as_ref().try_into().expect("checked"),
+        },
+        AeadAlgorithm::Gcm => AeadProps::Gcm {
+            iv: iv.as_ref().try_into().expect("checked"),
+        },
+        _ => unsupported_err!("aead algorithm for v6: {:?}", aead),
+    };
+
+    Ok(SymKeyEncryptedSessionKey::V6 {
+        packet_header,
+        sym_algorithm: sym_alg,
+        aead,
+        s2k,
+        encrypted_key: esk.freeze(),
+    })
+}
+
+impl Serialize for SymKeyEncryptedSessionKey {
+    fn to_writer<W: io::Write>(&self, writer: &mut W) -> Result<()> {
+        match &self {
+            SymKeyEncryptedSessionKey::V4 {
+                packet_header: _,
+                sym_algorithm,
+                s2k,
+                encrypted_key,
+            } => {
+                writer.write_u8(0x04)?;
+                writer.write_u8((*sym_algorithm).into())?;
+                s2k.to_writer(writer)?;
+                writer.write_all(encrypted_key)?;
+            }
+            SymKeyEncryptedSessionKey::V5 {
+                packet_header: _,
+                sym_algorithm,
+                s2k,
+                aead,
+                encrypted_key,
+            } => {
+                writer.write_u8(0x05)?;
+
+                writer.write_u8((*sym_algorithm).into())?;
+                writer.write_u8(AeadAlgorithm::from(aead).into())?;
+
+                s2k.to_writer(writer)?;
+
+                writer.write_all(aead.iv())?;
+                writer.write_all(encrypted_key)?;
+            }
+            SymKeyEncryptedSessionKey::V6 {
+                packet_header: _,
+                sym_algorithm,
+                s2k,
+                aead,
+                encrypted_key,
+            } => {
+                writer.write_u8(0x06)?;
+
+                let s2k_len = s2k.write_len();
+                let first_len = 1 + 1 + 1 + s2k_len + aead.iv().len();
+
+                writer.write_u8(first_len.try_into()?)?;
+
+                writer.write_u8((*sym_algorithm).into())?;
+                writer.write_u8(AeadAlgorithm::from(aead).into())?;
+                writer.write_u8(s2k_len.try_into()?)?;
+                s2k.to_writer(writer)?;
+                writer.write_all(aead.iv())?;
+
+                writer.write_all(encrypted_key)?;
+            }
+            SymKeyEncryptedSessionKey::Other {
+                packet_header: _,
+                version,
+                data,
+            } => {
+                writer.write_u8(*version)?;
+                writer.write_all(data)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn write_len(&self) -> usize {
+        let mut sum = 0;
+        match self {
+            SymKeyEncryptedSessionKey::V4 {
+                s2k, encrypted_key, ..
+            } => {
+                sum += 1 + 1;
+                sum += s2k.write_len();
+                sum += encrypted_key.len();
+            }
+            SymKeyEncryptedSessionKey::V5 {
+                s2k,
+                aead,
+                encrypted_key,
+                ..
+            } => {
+                sum += 1;
+                sum += 1 + 1;
+
+                sum += s2k.write_len();
+
+                sum += aead.iv().len();
+                sum += encrypted_key.len();
+            }
+            SymKeyEncryptedSessionKey::V6 {
+                s2k,
+                aead,
+                encrypted_key,
+                ..
+            } => {
+                sum += 1;
+                sum += 1 + 1;
+
+                sum += s2k.write_len();
+                sum += 1;
+                sum += aead.iv().len();
+
+                sum += 1;
+                sum += encrypted_key.len();
+            }
+            SymKeyEncryptedSessionKey::Other { data, .. } => {
+                sum += 1;
+                sum += data.len();
+            }
+        }
+        sum
+    }
+}
+
+impl PacketTrait for SymKeyEncryptedSessionKey {
+    fn packet_header(&self) -> &PacketHeader {
+        match self {
+            SymKeyEncryptedSessionKey::V4 { packet_header, .. } => packet_header,
+            SymKeyEncryptedSessionKey::V5 { packet_header, .. } => packet_header,
+            SymKeyEncryptedSessionKey::V6 { packet_header, .. } => packet_header,
+            SymKeyEncryptedSessionKey::Other { packet_header, .. } => packet_header,
+        }
+    }
+}

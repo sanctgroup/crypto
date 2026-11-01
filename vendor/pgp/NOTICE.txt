@@ -1,0 +1,11 @@
+This product includes a modified copy of rPGP 0.21.0.
+Upstream: https://github.com/rpgp/rpgp
+Source revision: c2b192e52b2e7f99777196539ea79b37f1f9ff30
+Authors: the rPGP contributors, including dignifiedquire.
+Upstream license: MIT OR Apache-2.0. This copy may be used under the MIT license.
+
+Sanct removed RSA, ECDSA, NIST ECDH, Ed448, X448 and optional OpenPGP PQC
+providers and their dependencies. These algorithms are unavailable in this build.
+Source comments, upstream test code, examples and benchmarks were omitted.
+The remaining Curve25519 cryptographic implementations are derived from rPGP.
+The complete upstream license texts accompany this notice.

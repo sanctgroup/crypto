@@ -6,7 +6,11 @@
   "files": [
     "sanct_wasm_bg.wasm",
     "sanct_wasm.js",
-    "sanct_wasm.d.ts"
+    "sanct_wasm.d.ts",
+    "LICENSE",
+    "RPGP-LICENSE-MIT",
+    "RPGP-LICENSE-APACHE",
+    "RPGP-NOTICE.txt"
   ],
   "main": "sanct_wasm.js",
   "types": "sanct_wasm.d.ts",

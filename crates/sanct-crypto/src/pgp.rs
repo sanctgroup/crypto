@@ -11,7 +11,7 @@ use pgp::crypto::hash::HashAlgorithm;
 use pgp::crypto::sym::SymmetricKeyAlgorithm;
 use pgp::packet::{Signature, SignatureType};
 use pgp::types::{
-    CompressionAlgorithm, KeyDetails, Password, PublicParams, S2kParams, SecretParams,
+    CompressionAlgorithm, KeyDetails, KeyVersion, Password, PublicParams, S2kParams, SecretParams,
     Seipdv1ReadMode, StringToKey, Tag,
 };
 use rand::rngs::OsRng;
@@ -689,7 +689,13 @@ fn primary_signature(key: &SignedPublicKey) -> Option<&Signature> {
     key.details
         .direct_signatures
         .iter()
-        .chain(key.details.users.iter().flat_map(|u| &u.signatures))
+        .chain(
+            key.details
+                .users
+                .iter()
+                .flat_map(|u| &u.signatures)
+                .filter(|_| key.primary_key.version() != KeyVersion::V6),
+        )
         .filter(|sig| sig.created().is_some())
         .max_by_key(|sig| {
             (
@@ -959,53 +965,94 @@ mod tests {
     }
 
     #[test]
-    fn unsafe_private_key_algorithms_are_rejected() {
-        for kind in [KeyType::Rsa(2048), KeyType::ECDSA(ECCCurve::P256)] {
+    fn modern_curve25519_keys_keep_v4_and_v6_interoperability() {
+        for version in [KeyVersion::V4, KeyVersion::V6] {
+            let subkey = SubkeyParamsBuilder::default()
+                .version(version)
+                .key_type(KeyType::X25519)
+                .can_encrypt(EncryptionCaps::All)
+                .build()
+                .unwrap();
             let secret = SecretKeyParamsBuilder::default()
-                .key_type(kind)
+                .version(version)
+                .key_type(KeyType::Ed25519)
                 .can_sign(true)
                 .can_certify(true)
-                .primary_user_id("Fixture <fixture@example.invalid>".into())
+                .primary_user_id("Modern <modern@example.invalid>".into())
+                .subkey(subkey)
                 .build()
                 .unwrap()
                 .generate(OsRng)
                 .unwrap();
+            let mut public_key = SignedPublicKey::from(secret.clone());
+            if version == KeyVersion::V6 {
+                let direct = std::mem::take(&mut public_key.details.direct_signatures);
+                assert!(validated_public(public_key.clone()).is_err());
+                public_key.details.direct_signatures = direct;
+            }
+            let public = public_key
+                .to_armored_string(ArmorOptions::default())
+                .unwrap();
             let wire = secret.to_armored_string(ArmorOptions::default()).unwrap();
-            assert!(matches!(
-                import_key(wire.as_bytes(), None),
-                Err(PgpError::UnsafePrivateKey)
-            ));
-            assert!(matches!(
-                decrypt_message(&[wire.into_bytes()], b"invalid"),
-                Err(PgpError::UnsafePrivateKey)
-            ));
+            let imported = import_key(wire.as_bytes(), None).unwrap();
+            let ciphertext =
+                encrypt_to_recipients(&[public.as_bytes().to_vec()], b"modern").unwrap();
+            let result = decrypt_message(
+                &[imported.armored_secret_unprotected.as_bytes().to_vec()],
+                ciphertext.as_bytes(),
+            )
+            .unwrap();
+            assert_eq!(result.plaintext, b"modern");
+            let modern = GeneratedKey {
+                armored_public: public,
+                armored_secret: wire,
+                fingerprint: imported.fingerprint.clone(),
+                primary_uid: "Modern <modern@example.invalid>".into(),
+            };
+            let signed = signed_ciphertext(&modern, &modern);
+            let verified = decrypt_message_verified(
+                &[modern.armored_secret.as_bytes().to_vec()],
+                &signed,
+                &[modern.armored_public.as_bytes().to_vec()],
+            )
+            .unwrap();
+            assert_eq!(verified.plaintext, b"authenticated body");
+            assert_eq!(
+                verified.signer_fingerprint.as_deref(),
+                Some(modern.fingerprint.as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_private_key_providers_are_absent() {
+        for wire in [
+            include_bytes!("../tests/fixtures/rsa-secret.asc").as_slice(),
+            include_bytes!("../tests/fixtures/p256-secret.asc").as_slice(),
+            include_bytes!("../tests/fixtures/p256-encryption-secret.asc").as_slice(),
+        ] {
+            assert!(parse_secret(wire).is_err());
+            assert!(import_key(wire, None).is_err());
+            assert!(decrypt_message(&[wire.to_vec()], b"invalid").is_err());
+        }
+        for kind in [
+            KeyType::Rsa(2048),
+            KeyType::ECDSA(ECCCurve::P256),
+            KeyType::Ed448,
+            KeyType::X448,
+            KeyType::ECDH(ECCCurve::P256),
+            KeyType::ECDH(ECCCurve::P384),
+            KeyType::ECDH(ECCCurve::P521),
+        ] {
+            assert!(kind.generate(OsRng).is_err());
         }
     }
 
     #[test]
     fn encryption_does_not_generate_unsafe_ephemeral_curve_keys() {
-        let subkey = SubkeyParamsBuilder::default()
-            .key_type(KeyType::ECDH(ECCCurve::P256))
-            .can_encrypt(EncryptionCaps::All)
-            .build()
-            .unwrap();
-        let secret = SecretKeyParamsBuilder::default()
-            .key_type(KeyType::Ed25519Legacy)
-            .can_sign(true)
-            .can_certify(true)
-            .primary_user_id("Fixture <fixture@example.invalid>".into())
-            .subkey(subkey)
-            .build()
-            .unwrap()
-            .generate(OsRng)
-            .unwrap();
-        let public = SignedPublicKey::from(secret)
-            .to_armored_string(ArmorOptions::default())
-            .unwrap();
-        assert!(!parse_public_info(public.as_bytes()).unwrap().can_encrypt);
-        assert!(
-            encrypt_to_recipients(&[public.into_bytes()], b"must not use an unsafe curve").is_err()
-        );
+        let public = include_bytes!("../tests/fixtures/p256-encryption-public.asc");
+        assert!(parse_public_info(public).is_err());
+        assert!(encrypt_to_recipients(&[public.to_vec()], b"must reject").is_err());
     }
 
     #[test]

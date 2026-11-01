@@ -1,0 +1,180 @@
+{
+  "before": "updated.json",
+  "after": "restricted.json",
+  "version": "0.3.0",
+  "cargoLockSha256": "94a34dbc40a4b67f723a36caa31188daefbb893a69726020441bd465c1cf3f65",
+  "rows": [
+    {
+      "name": "deriveMasterKey/64MiB,t=3,p=1",
+      "beforeMs": 84.84679200000005,
+      "afterMs": 95.36020799999994,
+      "latencyChangePercent": 12.391058933612808
+    },
+    {
+      "name": "generateIdentityKeys",
+      "beforeMs": 0.0913258476562504,
+      "afterMs": 0.0944174804687492,
+      "latencyChangePercent": 3.385276886928734
+    },
+    {
+      "name": "decryptPrivateKeys",
+      "beforeMs": 0.03818090820312481,
+      "afterMs": 0.03958886718750021,
+      "latencyChangePercent": 3.687599511475659
+    },
+    {
+      "name": "computeSubjectHash",
+      "beforeMs": 0.0006992352600097632,
+      "afterMs": 0.0007791900634765633,
+      "latencyChangePercent": 11.43460692552658
+    },
+    {
+      "name": "generateRecoveryPhrase",
+      "beforeMs": 0.0024040679931640607,
+      "afterMs": 0.002749806762695317,
+      "latencyChangePercent": 14.381405622235333
+    },
+    {
+      "name": "encryptMetadata/0",
+      "beforeMs": 0.0005428085327148433,
+      "afterMs": 0.0005871785583496103,
+      "latencyChangePercent": 8.174157729771036
+    },
+    {
+      "name": "decryptMetadata/0",
+      "beforeMs": 0.0002870585021972627,
+      "afterMs": 0.0003157908020019612,
+      "latencyChangePercent": 10.009214005079015
+    },
+    {
+      "name": "encryptMessage/0",
+      "beforeMs": 0.09686197656249895,
+      "afterMs": 0.09960465234374993,
+      "latencyChangePercent": 2.8315298516351284
+    },
+    {
+      "name": "decryptMessage/0",
+      "beforeMs": 0.09082144921874935,
+      "afterMs": 0.09319140624999989,
+      "latencyChangePercent": 2.6094684148260328
+    },
+    {
+      "name": "encryptMetadata/1024",
+      "beforeMs": 0.0024568023681640905,
+      "afterMs": 0.002629247070312535,
+      "latencyChangePercent": 7.01907098360981
+    },
+    {
+      "name": "decryptMetadata/1024",
+      "beforeMs": 0.0020425465087891004,
+      "afterMs": 0.0021684366455078097,
+      "latencyChangePercent": 6.1633914418596
+    },
+    {
+      "name": "encryptMessage/1024",
+      "beforeMs": 0.09895751953124865,
+      "afterMs": 0.1044282226562494,
+      "latencyChangePercent": 5.528334936965784
+    },
+    {
+      "name": "decryptMessage/1024",
+      "beforeMs": 0.0937327460937496,
+      "afterMs": 0.09669026953124948,
+      "latencyChangePercent": 3.1552723682519934
+    },
+    {
+      "name": "encryptMetadata/65536",
+      "beforeMs": 0.12145475000000161,
+      "afterMs": 0.13176041406249794,
+      "latencyChangePercent": 8.485188156491375
+    },
+    {
+      "name": "decryptMetadata/65536",
+      "beforeMs": 0.1094178046874994,
+      "afterMs": 0.11579231250000532,
+      "latencyChangePercent": 5.825841443914648
+    },
+    {
+      "name": "encryptMessage/65536",
+      "beforeMs": 0.21634570312500045,
+      "afterMs": 0.22860678125000788,
+      "latencyChangePercent": 5.667354584769924
+    },
+    {
+      "name": "decryptMessage/65536",
+      "beforeMs": 0.2001080781250053,
+      "afterMs": 0.20715624999999704,
+      "latencyChangePercent": 3.52218258304835
+    },
+    {
+      "name": "encryptMetadata/1048576",
+      "beforeMs": 1.8426198124999473,
+      "afterMs": 1.9062916249999944,
+      "latencyChangePercent": 3.455504606436488
+    },
+    {
+      "name": "decryptMetadata/1048576",
+      "beforeMs": 1.7086145624999745,
+      "afterMs": 1.7619322500000294,
+      "latencyChangePercent": 3.1205216594925034
+    },
+    {
+      "name": "encryptMessage/1048576",
+      "beforeMs": 1.9390416250000726,
+      "afterMs": 2.0152396250000493,
+      "latencyChangePercent": 3.9296732477299923
+    },
+    {
+      "name": "decryptMessage/1048576",
+      "beforeMs": 1.801835937500016,
+      "afterMs": 1.9184687499999882,
+      "latencyChangePercent": 6.472998460769741
+    },
+    {
+      "name": "encryptMetadata/8388608",
+      "beforeMs": 14.797082999999475,
+      "afterMs": 15.601875000000291,
+      "latencyChangePercent": 5.438855752859162
+    },
+    {
+      "name": "decryptMetadata/8388608",
+      "beforeMs": 13.729833000000326,
+      "afterMs": 14.318458499999906,
+      "latencyChangePercent": 4.2872007255992495
+    },
+    {
+      "name": "encryptMessage/8388608",
+      "beforeMs": 14.921124999999847,
+      "afterMs": 15.552209000000403,
+      "latencyChangePercent": 4.229466611938193
+    },
+    {
+      "name": "decryptMessage/8388608",
+      "beforeMs": 13.810687500000313,
+      "afterMs": 14.261437499999829,
+      "latencyChangePercent": 3.263776694675813
+    },
+    {
+      "name": "pgpGenerateKey",
+      "beforeMs": 0.08232551953124911,
+      "afterMs": 0.08459000781250126,
+      "latencyChangePercent": 2.7506516741659714
+    },
+    {
+      "name": "pgpEncrypt/1024",
+      "beforeMs": 0.20231282031249975,
+      "afterMs": 0.20862239062499555,
+      "latencyChangePercent": 3.1187199618639028
+    },
+    {
+      "name": "pgpDecrypt/1024",
+      "beforeMs": 0.2048707734374986,
+      "afterMs": 0.20807910156249676,
+      "latencyChangePercent": 1.5660252905605132
+    }
+  ],
+  "wasmBeforeBytes": 3486075,
+  "wasmAfterBytes": 2757471,
+  "gzipBeforeBytes": 1138826,
+  "gzipAfterBytes": 920996
+}

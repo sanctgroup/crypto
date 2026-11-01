@@ -25,7 +25,10 @@ exceptions = []
 [bans]
 multiple-versions = "allow"
 wildcards = "warn"
-deny = []
+deny = [
+    { name = "rsa" },
+    { name = "crypto-bigint", version = "<0.7.6" },
+]
 
 [sources]
 unknown-registry = "deny"
