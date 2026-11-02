@@ -1,5 +1,7 @@
 use argon2::{self, Argon2, Params};
-use zeroize::Zeroizing;
+use hkdf::Hkdf;
+use sha2::Sha256;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::CryptoError;
 
@@ -11,7 +13,27 @@ pub fn generate_salt() -> [u8; 32] {
     salt
 }
 
-pub fn derive_master_key(
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct PasswordKeys {
+    pub auth_key: [u8; MASTER_KEY_LEN],
+    pub wrap_key: [u8; MASTER_KEY_LEN],
+}
+
+pub fn derive_password_keys(password: &[u8], salt: &[u8]) -> Result<PasswordKeys, CryptoError> {
+    let master = derive_master_key(password, salt)?;
+    let hk = Hkdf::<Sha256>::new(Some(b"sanct-password-split-v1"), master.as_ref());
+    let mut keys = PasswordKeys {
+        auth_key: [0u8; MASTER_KEY_LEN],
+        wrap_key: [0u8; MASTER_KEY_LEN],
+    };
+    hk.expand(b"auth", &mut keys.auth_key)
+        .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
+    hk.expand(b"wrap", &mut keys.wrap_key)
+        .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
+    Ok(keys)
+}
+
+fn derive_master_key(
     password: &[u8],
     salt: &[u8],
 ) -> Result<Zeroizing<[u8; MASTER_KEY_LEN]>, CryptoError> {
@@ -35,6 +57,19 @@ pub fn derive_master_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auth_and_wrap_keys_are_independent() {
+        let salt = [42u8; 32];
+        let keys = derive_password_keys(b"test-password", &salt).unwrap();
+        let master = derive_master_key(b"test-password", &salt).unwrap();
+        assert_ne!(keys.auth_key, keys.wrap_key);
+        assert_ne!(keys.auth_key, *master);
+        assert_ne!(keys.wrap_key, *master);
+        let again = derive_password_keys(b"test-password", &salt).unwrap();
+        assert_eq!(keys.auth_key, again.auth_key);
+        assert_eq!(keys.wrap_key, again.wrap_key);
+    }
 
     #[test]
     fn test_derive_master_key_deterministic() {

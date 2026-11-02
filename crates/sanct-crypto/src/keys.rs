@@ -5,16 +5,30 @@ use sha2::Sha256;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::hybrid::{MlKemEncoding, MlKemKeyPair, X25519KeyPair};
+use crate::signing;
 use crate::symmetric;
 use crate::CryptoError;
 
 type HmacSha256 = Hmac<Sha256>;
 
+const BUNDLE_AAD: &[u8] = b"sanct-private-bundle-v1";
+const ACCOUNT_KEY_AAD_PREFIX: &[u8] = b"sanct-account-key-v1:";
+const KEY_LEN: usize = 32;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IdentityKeyBundle {
     pub x25519_public: Vec<u8>,
     pub mlkem768_public: Vec<u8>,
+    pub ed25519_public: Vec<u8>,
+    pub mldsa65_public: Vec<u8>,
+    pub key_version: u32,
     pub encrypted_private_bundle: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
+pub struct PreviousKeys {
+    pub x25519_secret: Vec<u8>,
+    pub mlkem768_secret: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
@@ -22,33 +36,185 @@ pub struct PrivateKeys {
     pub x25519_secret: Vec<u8>,
     pub mlkem768_secret: Vec<u8>,
     pub threading_key: Vec<u8>,
+    pub data_key: Vec<u8>,
+    pub ed25519_seed: Vec<u8>,
+    pub mldsa65_seed: Vec<u8>,
+    pub key_version: u32,
+    pub previous: Vec<PreviousKeys>,
 }
 
-pub fn generate_identity_keys(master_key: &[u8]) -> Result<IdentityKeyBundle, CryptoError> {
-    if master_key.len() != 32 {
-        return Err(CryptoError::InvalidKeyLength(master_key.len()));
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrapPurpose {
+    Password,
+    Recovery,
+    Passkey,
+}
+
+impl WrapPurpose {
+    fn label(self) -> &'static [u8] {
+        match self {
+            Self::Password => b"password",
+            Self::Recovery => b"recovery",
+            Self::Passkey => b"passkey",
+        }
     }
 
+    pub fn parse(value: &str) -> Result<Self, CryptoError> {
+        match value {
+            "password" => Ok(Self::Password),
+            "recovery" => Ok(Self::Recovery),
+            "passkey" => Ok(Self::Passkey),
+            _ => Err(CryptoError::InvalidCiphertext),
+        }
+    }
+}
+
+pub fn generate_account_key() -> Zeroizing<[u8; KEY_LEN]> {
+    random_key()
+}
+
+pub fn wrap_account_key(
+    wrap_key: &[u8],
+    account_key: &[u8],
+    purpose: WrapPurpose,
+) -> Result<Vec<u8>, CryptoError> {
+    if account_key.len() != KEY_LEN {
+        return Err(CryptoError::InvalidKeyLength(account_key.len()));
+    }
+    symmetric::encrypt(wrap_key, &account_key_aad(purpose), account_key)
+}
+
+pub fn unwrap_account_key(
+    wrap_key: &[u8],
+    wrapped: &[u8],
+    purpose: WrapPurpose,
+) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    let account_key = Zeroizing::new(symmetric::decrypt(
+        wrap_key,
+        &account_key_aad(purpose),
+        wrapped,
+    )?);
+    if account_key.len() != KEY_LEN {
+        return Err(CryptoError::InvalidCiphertext);
+    }
+    Ok(account_key)
+}
+
+fn account_key_aad(purpose: WrapPurpose) -> Vec<u8> {
+    [ACCOUNT_KEY_AAD_PREFIX, purpose.label()].concat()
+}
+
+pub fn generate_identity_keys(account_key: &[u8]) -> Result<IdentityKeyBundle, CryptoError> {
+    if account_key.len() != KEY_LEN {
+        return Err(CryptoError::InvalidKeyLength(account_key.len()));
+    }
+
+    let threading_key = random_key();
+    let data_key = random_key();
+    build_identity(
+        account_key,
+        1,
+        &threading_key[..],
+        &data_key[..],
+        Vec::new(),
+    )
+}
+
+pub fn rotate_identity_keys(
+    account_key: &[u8],
+    current: &PrivateKeys,
+) -> Result<IdentityKeyBundle, CryptoError> {
+    if account_key.len() != KEY_LEN {
+        return Err(CryptoError::InvalidKeyLength(account_key.len()));
+    }
+
+    let mut previous = Vec::with_capacity(current.previous.len() + 1);
+    previous.push(PreviousKeys {
+        x25519_secret: current.x25519_secret.clone(),
+        mlkem768_secret: current.mlkem768_secret.clone(),
+    });
+    for entry in &current.previous {
+        previous.push(PreviousKeys {
+            x25519_secret: entry.x25519_secret.clone(),
+            mlkem768_secret: entry.mlkem768_secret.clone(),
+        });
+    }
+
+    let next_version = current
+        .key_version
+        .checked_add(1)
+        .ok_or(CryptoError::KeyDerivation("key version overflow".into()))?;
+    build_identity(
+        account_key,
+        next_version,
+        &current.threading_key,
+        &current.data_key,
+        previous,
+    )
+}
+
+fn build_identity(
+    account_key: &[u8],
+    key_version: u32,
+    threading_key: &[u8],
+    data_key: &[u8],
+    previous: Vec<PreviousKeys>,
+) -> Result<IdentityKeyBundle, CryptoError> {
     let x25519_kp = X25519KeyPair::generate();
     let mlkem_kp = MlKemKeyPair::generate();
-    let threading_key = Zeroizing::new(derive_threading_key(master_key)?);
+    let ed25519_seed = random_key();
+    let mldsa65_seed = random_key();
+    let signing_public = signing::public_keys(&ed25519_seed[..], &mldsa65_seed[..])?;
 
     let private_keys = PrivateKeys {
         x25519_secret: x25519_kp.secret.as_bytes().to_vec(),
         mlkem768_secret: mlkem_kp.decapsulation_key.as_bytes().to_vec(),
         threading_key: threading_key.to_vec(),
+        data_key: data_key.to_vec(),
+        ed25519_seed: ed25519_seed.to_vec(),
+        mldsa65_seed: mldsa65_seed.to_vec(),
+        key_version,
+        previous,
     };
 
-    let private_bytes = Zeroizing::new(
-        serde_json::to_vec(&private_keys).map_err(|e| CryptoError::Serialization(e.to_string()))?,
-    );
-    let encrypted_private_bundle = symmetric::encrypt(master_key, &private_bytes)?;
+    let private_bytes = Zeroizing::new(serialize_private_keys(&private_keys)?);
+    let encrypted_private_bundle = symmetric::encrypt(account_key, BUNDLE_AAD, &private_bytes)?;
 
     Ok(IdentityKeyBundle {
         x25519_public: x25519_kp.public.as_bytes().to_vec(),
         mlkem768_public: mlkem_kp.encapsulation_key.as_bytes().to_vec(),
+        ed25519_public: signing_public.ed25519.clone(),
+        mldsa65_public: signing_public.mldsa65.clone(),
+        key_version,
         encrypted_private_bundle,
     })
+}
+
+pub fn serialize_private_keys(keys: &PrivateKeys) -> Result<Vec<u8>, CryptoError> {
+    serde_json::to_vec(keys).map_err(|e| CryptoError::Serialization(e.to_string()))
+}
+
+pub fn parse_private_keys(bytes: &[u8]) -> Result<PrivateKeys, CryptoError> {
+    serde_json::from_slice(bytes).map_err(|e| CryptoError::Serialization(e.to_string()))
+}
+
+pub fn decrypt_private_bundle(
+    account_key: &[u8],
+    encrypted_bundle: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    let decrypted = Zeroizing::new(symmetric::decrypt(
+        account_key,
+        BUNDLE_AAD,
+        encrypted_bundle,
+    )?);
+    parse_private_keys(&decrypted)?;
+    Ok(decrypted)
+}
+
+fn random_key() -> Zeroizing<[u8; KEY_LEN]> {
+    let mut key = Zeroizing::new([0u8; KEY_LEN]);
+    getrandom::fill(key.as_mut()).expect("OS randomness unavailable");
+    key
 }
 
 pub fn derive_lookup_public_keys(lookup_key: &[u8]) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
@@ -81,23 +247,19 @@ pub fn derive_lookup_public_keys(lookup_key: &[u8]) -> Result<(Vec<u8>, Vec<u8>)
     Ok((x25519.public.as_bytes().to_vec(), ek.to_bytes().to_vec()))
 }
 
-pub fn decrypt_private_bundle(
-    master_key: &[u8],
-    encrypted_bundle: &[u8],
-) -> Result<PrivateKeys, CryptoError> {
-    let decrypted = Zeroizing::new(symmetric::decrypt(master_key, encrypted_bundle)?);
-    let keys: PrivateKeys = serde_json::from_slice(&decrypted)
-        .map_err(|e| CryptoError::Serialization(e.to_string()))?;
-    Ok(keys)
-}
-
-fn derive_threading_key(master_key: &[u8]) -> Result<[u8; 32], CryptoError> {
+pub fn derive_lookup_signing_keys(
+    lookup_key: &[u8],
+) -> Result<signing::SigningPublicKeys, CryptoError> {
     use hkdf::Hkdf;
-    let hk = Hkdf::<Sha256>::new(Some(b"sanct-threading-key-v1"), master_key);
-    let mut key = [0u8; 32];
-    hk.expand(b"threading-hmac", &mut key)
+
+    let hk = Hkdf::<Sha256>::new(Some(b"sanct-directory-signing-lookup-v1"), lookup_key);
+    let mut ed25519_seed = Zeroizing::new([0u8; KEY_LEN]);
+    let mut mldsa65_seed = Zeroizing::new([0u8; KEY_LEN]);
+    hk.expand(b"ed25519", ed25519_seed.as_mut())
         .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
-    Ok(key)
+    hk.expand(b"mldsa65", mldsa65_seed.as_mut())
+        .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
+    signing::public_keys(&ed25519_seed[..], &mldsa65_seed[..])
 }
 
 pub fn compute_subject_hash(threading_key: &[u8], subject: &str) -> Vec<u8> {
@@ -142,27 +304,83 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_and_decrypt_roundtrip() {
-        let master_key = [0xABu8; 32];
-        let bundle = generate_identity_keys(&master_key).unwrap();
+    fn identity_roundtrip() {
+        let account_key = [0xABu8; 32];
+        let bundle = generate_identity_keys(&account_key).unwrap();
 
         assert_eq!(bundle.x25519_public.len(), 32);
-        assert!(!bundle.mlkem768_public.is_empty());
-        assert!(!bundle.encrypted_private_bundle.is_empty());
+        assert_eq!(bundle.ed25519_public.len(), 32);
+        assert_eq!(bundle.mldsa65_public.len(), 1952);
+        assert_eq!(bundle.key_version, 1);
 
-        let private_keys =
-            decrypt_private_bundle(&master_key, &bundle.encrypted_private_bundle).unwrap();
-        assert_eq!(private_keys.x25519_secret.len(), 32);
-        assert!(!private_keys.mlkem768_secret.is_empty());
-        assert_eq!(private_keys.threading_key.len(), 32);
+        let bytes = decrypt_private_bundle(&account_key, &bundle.encrypted_private_bundle).unwrap();
+        let keys = parse_private_keys(&bytes).unwrap();
+        assert_eq!(keys.x25519_secret.len(), 32);
+        assert_eq!(keys.threading_key.len(), 32);
+        assert_eq!(keys.data_key.len(), 32);
+        assert_ne!(keys.threading_key, keys.data_key);
     }
 
     #[test]
-    fn test_wrong_master_key_fails() {
-        let master_key = [0xABu8; 32];
-        let wrong_key = [0xCDu8; 32];
-        let bundle = generate_identity_keys(&master_key).unwrap();
-        assert!(decrypt_private_bundle(&wrong_key, &bundle.encrypted_private_bundle).is_err());
+    fn threading_key_does_not_depend_on_account_key() {
+        let account_key = [0xABu8; 32];
+        let one = generate_identity_keys(&account_key).unwrap();
+        let two = generate_identity_keys(&account_key).unwrap();
+        let one = parse_private_keys(
+            &decrypt_private_bundle(&account_key, &one.encrypted_private_bundle).unwrap(),
+        )
+        .unwrap();
+        let two = parse_private_keys(
+            &decrypt_private_bundle(&account_key, &two.encrypted_private_bundle).unwrap(),
+        )
+        .unwrap();
+        assert_ne!(one.threading_key, two.threading_key);
+    }
+
+    #[test]
+    fn wrong_account_key_fails() {
+        let bundle = generate_identity_keys(&[0xABu8; 32]).unwrap();
+        assert!(decrypt_private_bundle(&[0xCDu8; 32], &bundle.encrypted_private_bundle).is_err());
+    }
+
+    #[test]
+    fn account_key_wrap_is_bound_to_purpose() {
+        let wrap = [1u8; 32];
+        let account = generate_account_key();
+        let wrapped = wrap_account_key(&wrap, &account[..], WrapPurpose::Password).unwrap();
+        assert_eq!(
+            &unwrap_account_key(&wrap, &wrapped, WrapPurpose::Password).unwrap()[..],
+            &account[..]
+        );
+        assert!(unwrap_account_key(&wrap, &wrapped, WrapPurpose::Recovery).is_err());
+        assert!(unwrap_account_key(&[2u8; 32], &wrapped, WrapPurpose::Password).is_err());
+    }
+
+    #[test]
+    fn rotation_keeps_old_keys_and_stable_secrets() {
+        let account_key = [0x11u8; 32];
+        let first = generate_identity_keys(&account_key).unwrap();
+        let first_keys = parse_private_keys(
+            &decrypt_private_bundle(&account_key, &first.encrypted_private_bundle).unwrap(),
+        )
+        .unwrap();
+
+        let second = rotate_identity_keys(&account_key, &first_keys).unwrap();
+        assert_eq!(second.key_version, 2);
+        assert_ne!(second.x25519_public, first.x25519_public);
+        assert_ne!(second.ed25519_public, first.ed25519_public);
+
+        let second_keys = parse_private_keys(
+            &decrypt_private_bundle(&account_key, &second.encrypted_private_bundle).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(second_keys.threading_key, first_keys.threading_key);
+        assert_eq!(second_keys.data_key, first_keys.data_key);
+        assert_eq!(second_keys.previous.len(), 1);
+        assert_eq!(
+            second_keys.previous[0].x25519_secret,
+            first_keys.x25519_secret
+        );
     }
 
     #[test]
@@ -188,29 +406,6 @@ mod tests {
         let h1 = compute_subject_hash(&[1u8; 32], "Hello");
         let h2 = compute_subject_hash(&[2u8; 32], "Hello");
         assert_ne!(h1, h2);
-    }
-
-    #[test]
-    fn test_end_to_end_encrypt_decrypt() {
-        let master_key = [0x42u8; 32];
-        let bundle = generate_identity_keys(&master_key).unwrap();
-        let private_keys =
-            decrypt_private_bundle(&master_key, &bundle.encrypted_private_bundle).unwrap();
-
-        let plaintext = b"Top secret message from Sanct";
-
-        let sealed = crate::envelope::SealedEnvelope::seal(
-            &bundle.x25519_public,
-            &bundle.mlkem768_public,
-            plaintext,
-        )
-        .unwrap();
-
-        let decrypted = sealed
-            .open(&private_keys.x25519_secret, &private_keys.mlkem768_secret)
-            .unwrap();
-
-        assert_eq!(plaintext.as_slice(), decrypted.as_slice());
     }
 
     #[test]

@@ -16,8 +16,24 @@ export class IdentityKeys {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_identitykeys_free(ptr, 0);
     }
+    get ed25519Public() {
+        const ret = wasm.identitykeys_ed25519Public(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
     get encryptedPrivateBundle() {
         const ret = wasm.identitykeys_encryptedPrivateBundle(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    get keyVersion() {
+        const ret = wasm.identitykeys_keyVersion(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    get mldsa65Public() {
+        const ret = wasm.identitykeys_mldsa65Public(this.__wbg_ptr);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         zeroizeAndFree(ret[0], ret[1] * 1, 1);
         return v1;
@@ -36,6 +52,60 @@ export class IdentityKeys {
     }
 }
 if (Symbol.dispose) IdentityKeys.prototype[Symbol.dispose] = IdentityKeys.prototype.free;
+
+export class OpenedMail {
+    static __wrap(ptr) {
+        const obj = Object.create(OpenedMail.prototype);
+        obj.__wbg_ptr = ptr;
+        OpenedMailFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        OpenedMailFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_openedmail_free(ptr, 0);
+    }
+    get bindingId() {
+        const ret = wasm.openedmail_bindingId(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    get plaintext() {
+        const ret = wasm.openedmail_plaintext(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    get recipientKeyHash() {
+        const ret = wasm.openedmail_recipientKeyHash(this.__wbg_ptr);
+        let v1;
+        if (ret[0] !== 0) {
+            v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+            zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        }
+        return v1;
+    }
+    get selfSealed() {
+        const ret = wasm.openedmail_selfSealed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    get signature() {
+        const ret = wasm.openedmail_signature(this.__wbg_ptr);
+        let v1;
+        if (ret[0] !== 0) {
+            v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+            zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        }
+        return v1;
+    }
+}
+if (Symbol.dispose) OpenedMail.prototype[Symbol.dispose] = OpenedMail.prototype.free;
 
 export class PgpDecryptResult {
     static __wrap(ptr) {
@@ -292,44 +362,6 @@ export class PgpPublicKeyInfo {
 }
 if (Symbol.dispose) PgpPublicKeyInfo.prototype[Symbol.dispose] = PgpPublicKeyInfo.prototype.free;
 
-export class PrivateKeys {
-    static __wrap(ptr) {
-        const obj = Object.create(PrivateKeys.prototype);
-        obj.__wbg_ptr = ptr;
-        PrivateKeysFinalization.register(obj, obj.__wbg_ptr, obj);
-        return obj;
-    }
-    __destroy_into_raw() {
-        const ptr = this.__wbg_ptr;
-        this.__wbg_ptr = 0;
-        PrivateKeysFinalization.unregister(this);
-        return ptr;
-    }
-    free() {
-        const ptr = this.__destroy_into_raw();
-        wasm.__wbg_privatekeys_free(ptr, 0);
-    }
-    get mlkem768Secret() {
-        const ret = wasm.privatekeys_mlkem768Secret(this.__wbg_ptr);
-        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-        zeroizeAndFree(ret[0], ret[1] * 1, 1);
-        return v1;
-    }
-    get threadingKey() {
-        const ret = wasm.privatekeys_threadingKey(this.__wbg_ptr);
-        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-        zeroizeAndFree(ret[0], ret[1] * 1, 1);
-        return v1;
-    }
-    get x25519Secret() {
-        const ret = wasm.privatekeys_x25519Secret(this.__wbg_ptr);
-        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-        zeroizeAndFree(ret[0], ret[1] * 1, 1);
-        return v1;
-    }
-}
-if (Symbol.dispose) PrivateKeys.prototype[Symbol.dispose] = PrivateKeys.prototype.free;
-
 export class RecoveryResult {
     static __wrap(ptr) {
         const obj = Object.create(RecoveryResult.prototype);
@@ -347,6 +379,12 @@ export class RecoveryResult {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_recoveryresult_free(ptr, 0);
     }
+    get authKey() {
+        const ret = wasm.recoveryresult_authKey(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
     get phrase() {
         let deferred1_0;
         let deferred1_1;
@@ -359,14 +397,78 @@ export class RecoveryResult {
             zeroizeAndFree(deferred1_0, deferred1_1, 1);
         }
     }
-    get recoveryKey() {
-        const ret = wasm.recoveryresult_recoveryKey(this.__wbg_ptr);
+    get wrapKey() {
+        const ret = wasm.recoveryresult_wrapKey(this.__wbg_ptr);
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         zeroizeAndFree(ret[0], ret[1] * 1, 1);
         return v1;
     }
 }
 if (Symbol.dispose) RecoveryResult.prototype[Symbol.dispose] = RecoveryResult.prototype.free;
+
+export class SealedMail {
+    static __wrap(ptr) {
+        const obj = Object.create(SealedMail.prototype);
+        obj.__wbg_ptr = ptr;
+        SealedMailFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SealedMailFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_sealedmail_free(ptr, 0);
+    }
+    get body() {
+        const ret = wasm.sealedmail_body(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    get metadata() {
+        const ret = wasm.sealedmail_metadata(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) SealedMail.prototype[Symbol.dispose] = SealedMail.prototype.free;
+
+export class SplitKeys {
+    static __wrap(ptr) {
+        const obj = Object.create(SplitKeys.prototype);
+        obj.__wbg_ptr = ptr;
+        SplitKeysFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        SplitKeysFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_splitkeys_free(ptr, 0);
+    }
+    get authKey() {
+        const ret = wasm.splitkeys_authKey(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    get wrapKey() {
+        const ret = wasm.splitkeys_wrapKey(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        zeroizeAndFree(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) SplitKeys.prototype[Symbol.dispose] = SplitKeys.prototype.free;
 
 export function computeSubjectHash(threading_key, subject) {
     let ptr0, len0, ptr1, len1;
@@ -386,76 +488,10 @@ export function computeSubjectHash(threading_key, subject) {
     return v3;
 }
 
-export function decryptBundleWithRecovery(recovery_key, recovery_encrypted_bundle) {
+export function decryptPrivateBundle(account_key, encrypted_bundle) {
     let ptr0, len0, ptr1, len1;
     try {
-        ptr0 = passArray8ToWasm0(recovery_key, wasm.__wbindgen_malloc);
-        len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(recovery_encrypted_bundle, wasm.__wbindgen_malloc);
-        len1 = WASM_VECTOR_LEN;
-    } catch (e) {
-        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
-        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
-        throw e;
-    }
-    const ret = wasm.decryptBundleWithRecovery(ptr0, len0, ptr1, len1);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v3;
-}
-
-export function decryptMessage(x25519_private, mlkem_private, sealed_bytes) {
-    let ptr0, len0, ptr1, len1, ptr2, len2;
-    try {
-        ptr0 = passArray8ToWasm0(x25519_private, wasm.__wbindgen_malloc);
-        len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(mlkem_private, wasm.__wbindgen_malloc);
-        len1 = WASM_VECTOR_LEN;
-        ptr2 = passArray8ToWasm0(sealed_bytes, wasm.__wbindgen_malloc);
-        len2 = WASM_VECTOR_LEN;
-    } catch (e) {
-        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
-        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
-        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
-        throw e;
-    }
-    const ret = wasm.decryptMessage(ptr0, len0, ptr1, len1, ptr2, len2);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v4;
-}
-
-export function decryptMetadata(key, ciphertext) {
-    let ptr0, len0, ptr1, len1;
-    try {
-        ptr0 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
-        len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(ciphertext, wasm.__wbindgen_malloc);
-        len1 = WASM_VECTOR_LEN;
-    } catch (e) {
-        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
-        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
-        throw e;
-    }
-    const ret = wasm.decryptMetadata(ptr0, len0, ptr1, len1);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v3;
-}
-
-export function decryptPrivateKeys(master_key, encrypted_bundle) {
-    let ptr0, len0, ptr1, len1;
-    try {
-        ptr0 = passArray8ToWasm0(master_key, wasm.__wbindgen_malloc);
+        ptr0 = passArray8ToWasm0(account_key, wasm.__wbindgen_malloc);
         len0 = WASM_VECTOR_LEN;
         ptr1 = passArray8ToWasm0(encrypted_bundle, wasm.__wbindgen_malloc);
         len1 = WASM_VECTOR_LEN;
@@ -464,14 +500,16 @@ export function decryptPrivateKeys(master_key, encrypted_bundle) {
         if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
         throw e;
     }
-    const ret = wasm.decryptPrivateKeys(ptr0, len0, ptr1, len1);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
+    const ret = wasm.decryptPrivateBundle(ptr0, len0, ptr1, len1);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
     }
-    return PrivateKeys.__wrap(ret[0]);
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    zeroizeAndFree(ret[0], ret[1] * 1, 1);
+    return v3;
 }
 
-export function deriveMasterKey(password, salt) {
+export function derivePasswordKeys(password, salt) {
     let ptr0, len0, ptr1, len1;
     try {
         ptr0 = passStringToWasm0(password, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -483,107 +521,22 @@ export function deriveMasterKey(password, salt) {
         if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
         throw e;
     }
-    const ret = wasm.deriveMasterKey(ptr0, len0, ptr1, len1);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
+    const ret = wasm.derivePasswordKeys(ptr0, len0, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
     }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v3;
+    return SplitKeys.__wrap(ret[0]);
 }
 
-export function encryptBundleForRecovery(recovery_key, private_bundle_plaintext) {
-    let ptr0, len0, ptr1, len1;
-    try {
-        ptr0 = passArray8ToWasm0(recovery_key, wasm.__wbindgen_malloc);
-        len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(private_bundle_plaintext, wasm.__wbindgen_malloc);
-        len1 = WASM_VECTOR_LEN;
-    } catch (e) {
-        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
-        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
-        throw e;
-    }
-    const ret = wasm.encryptBundleForRecovery(ptr0, len0, ptr1, len1);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+export function generateAccountKey() {
+    const ret = wasm.generateAccountKey();
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v3;
+    return v1;
 }
 
-export function encryptDraft(own_x25519_pub, own_mlkem_pub, plaintext) {
-    let ptr0, len0, ptr1, len1, ptr2, len2;
-    try {
-        ptr0 = passArray8ToWasm0(own_x25519_pub, wasm.__wbindgen_malloc);
-        len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(own_mlkem_pub, wasm.__wbindgen_malloc);
-        len1 = WASM_VECTOR_LEN;
-        ptr2 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
-        len2 = WASM_VECTOR_LEN;
-    } catch (e) {
-        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
-        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
-        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
-        throw e;
-    }
-    const ret = wasm.encryptDraft(ptr0, len0, ptr1, len1, ptr2, len2);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v4;
-}
-
-export function encryptMessage(recipient_x25519_pub, recipient_mlkem_pub, plaintext) {
-    let ptr0, len0, ptr1, len1, ptr2, len2;
-    try {
-        ptr0 = passArray8ToWasm0(recipient_x25519_pub, wasm.__wbindgen_malloc);
-        len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(recipient_mlkem_pub, wasm.__wbindgen_malloc);
-        len1 = WASM_VECTOR_LEN;
-        ptr2 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
-        len2 = WASM_VECTOR_LEN;
-    } catch (e) {
-        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
-        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
-        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
-        throw e;
-    }
-    const ret = wasm.encryptMessage(ptr0, len0, ptr1, len1, ptr2, len2);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v4;
-}
-
-export function encryptMetadata(key, plaintext) {
-    let ptr0, len0, ptr1, len1;
-    try {
-        ptr0 = passArray8ToWasm0(key, wasm.__wbindgen_malloc);
-        len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
-        len1 = WASM_VECTOR_LEN;
-    } catch (e) {
-        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
-        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
-        throw e;
-    }
-    const ret = wasm.encryptMetadata(ptr0, len0, ptr1, len1);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
-    }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v3;
-}
-
-export function generateIdentityKeys(master_key) {
-    const ptr0 = passArray8ToWasm0(master_key, wasm.__wbindgen_malloc);
+export function generateIdentityKeys(account_key) {
+    const ptr0 = passArray8ToWasm0(account_key, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.generateIdentityKeys(ptr0, len0);
     if (ret[2]) {
@@ -594,7 +547,10 @@ export function generateIdentityKeys(master_key) {
 
 export function generateRecoveryPhrase() {
     const ret = wasm.generateRecoveryPhrase();
-    return RecoveryResult.__wrap(ret);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return RecoveryResult.__wrap(ret[0]);
 }
 
 export function generateSalt() {
@@ -604,13 +560,69 @@ export function generateSalt() {
     return v1;
 }
 
-export function hashRecoveryKey(recovery_key) {
-    const ptr0 = passArray8ToWasm0(recovery_key, wasm.__wbindgen_malloc);
+export function hashRecoveryAuthKey(auth_key) {
+    const ptr0 = passArray8ToWasm0(auth_key, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.hashRecoveryKey(ptr0, len0);
+    const ret = wasm.hashRecoveryAuthKey(ptr0, len0);
     var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     zeroizeAndFree(ret[0], ret[1] * 1, 1);
     return v2;
+}
+
+export function mailSignatureKeyVersion(signature) {
+    const ptr0 = passArray8ToWasm0(signature, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.mailSignatureKeyVersion(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] >>> 0;
+}
+
+export function openMail(private_bundle, kind, sealed) {
+    let ptr0, len0, ptr1, len1, ptr2, len2;
+    try {
+        ptr0 = passArray8ToWasm0(private_bundle, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len1 = WASM_VECTOR_LEN;
+        ptr2 = passArray8ToWasm0(sealed, wasm.__wbindgen_malloc);
+        len2 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
+        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
+        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.openMail(ptr0, len0, ptr1, len1, ptr2, len2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return OpenedMail.__wrap(ret[0]);
+}
+
+export function openRecord(private_bundle, kind, sealed) {
+    let ptr0, len0, ptr1, len1, ptr2, len2;
+    try {
+        ptr0 = passArray8ToWasm0(private_bundle, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len1 = WASM_VECTOR_LEN;
+        ptr2 = passArray8ToWasm0(sealed, wasm.__wbindgen_malloc);
+        len2 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
+        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
+        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.openRecord(ptr0, len0, ptr1, len1, ptr2, len2);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    zeroizeAndFree(ret[0], ret[1] * 1, 1);
+    return v4;
 }
 
 export function pgpDecryptMessage(armored_secrets, armored_ciphertext) {
@@ -762,26 +774,74 @@ export function pgpKeyInfo(armored_public) {
     return PgpPublicKeyInfo.__wrap(ret[0]);
 }
 
-export function recoveryKeyFromPhrase(phrase) {
+export function recoveryKeysFromPhrase(phrase) {
     const ptr0 = passStringToWasm0(phrase, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.recoveryKeyFromPhrase(ptr0, len0);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
+    const ret = wasm.recoveryKeysFromPhrase(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
     }
-    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v2;
+    return SplitKeys.__wrap(ret[0]);
 }
 
-export function sealForRecipient(recipient_x25519_pub, recipient_mlkem_pub, plaintext_body) {
-    let ptr0, len0, ptr1, len1, ptr2, len2;
+export function rotateIdentityKeys(account_key, private_bundle) {
+    let ptr0, len0, ptr1, len1;
+    try {
+        ptr0 = passArray8ToWasm0(account_key, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passArray8ToWasm0(private_bundle, wasm.__wbindgen_malloc);
+        len1 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
+        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.rotateIdentityKeys(ptr0, len0, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return IdentityKeys.__wrap(ret[0]);
+}
+
+export function sealMailForRecipient(recipient_x25519_pub, recipient_mlkem_pub, private_bundle, signing_address, body, metadata) {
+    let ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5;
     try {
         ptr0 = passArray8ToWasm0(recipient_x25519_pub, wasm.__wbindgen_malloc);
         len0 = WASM_VECTOR_LEN;
         ptr1 = passArray8ToWasm0(recipient_mlkem_pub, wasm.__wbindgen_malloc);
         len1 = WASM_VECTOR_LEN;
-        ptr2 = passArray8ToWasm0(plaintext_body, wasm.__wbindgen_malloc);
+        ptr2 = passArray8ToWasm0(private_bundle, wasm.__wbindgen_malloc);
+        len2 = WASM_VECTOR_LEN;
+        ptr3 = isLikeNone(signing_address) ? 0 : passStringToWasm0(signing_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len3 = WASM_VECTOR_LEN;
+        ptr4 = passArray8ToWasm0(body, wasm.__wbindgen_malloc);
+        len4 = WASM_VECTOR_LEN;
+        ptr5 = passArray8ToWasm0(metadata, wasm.__wbindgen_malloc);
+        len5 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr5) { zeroizeAndFree(ptr5, len5 * 1, 1); }
+        if (ptr4) { zeroizeAndFree(ptr4, len4 * 1, 1); }
+        if (ptr3) { zeroizeAndFree(ptr3, len3 * 1, 1); }
+        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
+        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
+        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.sealMailForRecipient(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return SealedMail.__wrap(ret[0]);
+}
+
+export function sealMailForSelf(private_bundle, body, metadata) {
+    let ptr0, len0, ptr1, len1, ptr2, len2;
+    try {
+        ptr0 = passArray8ToWasm0(private_bundle, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passArray8ToWasm0(body, wasm.__wbindgen_malloc);
+        len1 = WASM_VECTOR_LEN;
+        ptr2 = passArray8ToWasm0(metadata, wasm.__wbindgen_malloc);
         len2 = WASM_VECTOR_LEN;
     } catch (e) {
         if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
@@ -789,23 +849,21 @@ export function sealForRecipient(recipient_x25519_pub, recipient_mlkem_pub, plai
         if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
         throw e;
     }
-    const ret = wasm.sealForRecipient(ptr0, len0, ptr1, len1, ptr2, len2);
-    if (ret[3]) {
-        throw takeFromExternrefTable0(ret[2]);
+    const ret = wasm.sealMailForSelf(ptr0, len0, ptr1, len1, ptr2, len2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
     }
-    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-    zeroizeAndFree(ret[0], ret[1] * 1, 1);
-    return v4;
+    return SealedMail.__wrap(ret[0]);
 }
 
-export function sealMetadataForRecipient(recipient_x25519_pub, recipient_mlkem_pub, metadata_json) {
+export function sealRecord(private_bundle, kind, plaintext) {
     let ptr0, len0, ptr1, len1, ptr2, len2;
     try {
-        ptr0 = passArray8ToWasm0(recipient_x25519_pub, wasm.__wbindgen_malloc);
+        ptr0 = passArray8ToWasm0(private_bundle, wasm.__wbindgen_malloc);
         len0 = WASM_VECTOR_LEN;
-        ptr1 = passArray8ToWasm0(recipient_mlkem_pub, wasm.__wbindgen_malloc);
+        ptr1 = passStringToWasm0(kind, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         len1 = WASM_VECTOR_LEN;
-        ptr2 = passArray8ToWasm0(metadata_json, wasm.__wbindgen_malloc);
+        ptr2 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
         len2 = WASM_VECTOR_LEN;
     } catch (e) {
         if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
@@ -813,7 +871,7 @@ export function sealMetadataForRecipient(recipient_x25519_pub, recipient_mlkem_p
         if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
         throw e;
     }
-    const ret = wasm.sealMetadataForRecipient(ptr0, len0, ptr1, len1, ptr2, len2);
+    const ret = wasm.sealRecord(ptr0, len0, ptr1, len1, ptr2, len2);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
@@ -824,6 +882,100 @@ export function sealMetadataForRecipient(recipient_x25519_pub, recipient_mlkem_p
 
 export function start() {
     wasm.start();
+}
+
+export function threadingKeyFromBundle(private_bundle) {
+    const ptr0 = passArray8ToWasm0(private_bundle, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.threadingKeyFromBundle(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    zeroizeAndFree(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+export function unwrapAccountKey(wrap_key, wrapped, purpose) {
+    let ptr0, len0, ptr1, len1, ptr2, len2;
+    try {
+        ptr0 = passArray8ToWasm0(wrap_key, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passArray8ToWasm0(wrapped, wasm.__wbindgen_malloc);
+        len1 = WASM_VECTOR_LEN;
+        ptr2 = passStringToWasm0(purpose, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len2 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
+        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
+        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.unwrapAccountKey(ptr0, len0, ptr1, len1, ptr2, len2);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    zeroizeAndFree(ret[0], ret[1] * 1, 1);
+    return v4;
+}
+
+export function verifyMailSignature(signature, ed25519_public, mldsa65_public, sender_address, recipient_key_hash, binding_id, body, metadata) {
+    let ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7;
+    try {
+        ptr0 = passArray8ToWasm0(signature, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passArray8ToWasm0(ed25519_public, wasm.__wbindgen_malloc);
+        len1 = WASM_VECTOR_LEN;
+        ptr2 = passArray8ToWasm0(mldsa65_public, wasm.__wbindgen_malloc);
+        len2 = WASM_VECTOR_LEN;
+        ptr3 = passStringToWasm0(sender_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len3 = WASM_VECTOR_LEN;
+        ptr4 = passArray8ToWasm0(recipient_key_hash, wasm.__wbindgen_malloc);
+        len4 = WASM_VECTOR_LEN;
+        ptr5 = passArray8ToWasm0(binding_id, wasm.__wbindgen_malloc);
+        len5 = WASM_VECTOR_LEN;
+        ptr6 = passArray8ToWasm0(body, wasm.__wbindgen_malloc);
+        len6 = WASM_VECTOR_LEN;
+        ptr7 = passArray8ToWasm0(metadata, wasm.__wbindgen_malloc);
+        len7 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr7) { zeroizeAndFree(ptr7, len7 * 1, 1); }
+        if (ptr6) { zeroizeAndFree(ptr6, len6 * 1, 1); }
+        if (ptr5) { zeroizeAndFree(ptr5, len5 * 1, 1); }
+        if (ptr4) { zeroizeAndFree(ptr4, len4 * 1, 1); }
+        if (ptr3) { zeroizeAndFree(ptr3, len3 * 1, 1); }
+        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
+        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
+        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.verifyMailSignature(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7);
+    return ret !== 0;
+}
+
+export function wrapAccountKey(wrap_key, account_key, purpose) {
+    let ptr0, len0, ptr1, len1, ptr2, len2;
+    try {
+        ptr0 = passArray8ToWasm0(wrap_key, wasm.__wbindgen_malloc);
+        len0 = WASM_VECTOR_LEN;
+        ptr1 = passArray8ToWasm0(account_key, wasm.__wbindgen_malloc);
+        len1 = WASM_VECTOR_LEN;
+        ptr2 = passStringToWasm0(purpose, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        len2 = WASM_VECTOR_LEN;
+    } catch (e) {
+        if (ptr2) { zeroizeAndFree(ptr2, len2 * 1, 1); }
+        if (ptr1) { zeroizeAndFree(ptr1, len1 * 1, 1); }
+        if (ptr0) { zeroizeAndFree(ptr0, len0 * 1, 1); }
+        throw e;
+    }
+    const ret = wasm.wrapAccountKey(ptr0, len0, ptr1, len1, ptr2, len2);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    zeroizeAndFree(ret[0], ret[1] * 1, 1);
+    return v4;
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -980,6 +1132,9 @@ function __wbg_get_imports() {
 const IdentityKeysFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_identitykeys_free(ptr, 1));
+const OpenedMailFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_openedmail_free(ptr, 1));
 const PgpDecryptResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_pgpdecryptresult_free(ptr, 1));
@@ -992,12 +1147,15 @@ const PgpImportedKeyFinalization = (typeof FinalizationRegistry === 'undefined')
 const PgpPublicKeyInfoFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_pgppublickeyinfo_free(ptr, 1));
-const PrivateKeysFinalization = (typeof FinalizationRegistry === 'undefined')
-    ? { register: () => {}, unregister: () => {} }
-    : new FinalizationRegistry(ptr => wasm.__wbg_privatekeys_free(ptr, 1));
 const RecoveryResultFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_recoveryresult_free(ptr, 1));
+const SealedMailFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_sealedmail_free(ptr, 1));
+const SplitKeysFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_splitkeys_free(ptr, 1));
 
 function addToExternrefTable0(obj) {
     const idx = wasm.__externref_table_alloc();

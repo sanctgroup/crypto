@@ -3,9 +3,23 @@ export class IdentityKeys {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    readonly ed25519Public: Uint8Array;
     readonly encryptedPrivateBundle: Uint8Array;
+    readonly keyVersion: number;
+    readonly mldsa65Public: Uint8Array;
     readonly mlkem768Public: Uint8Array;
     readonly x25519Public: Uint8Array;
+}
+
+export class OpenedMail {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly bindingId: Uint8Array;
+    readonly plaintext: Uint8Array;
+    readonly recipientKeyHash: Uint8Array | undefined;
+    readonly selfSealed: boolean;
+    readonly signature: Uint8Array | undefined;
 }
 
 export class PgpDecryptResult {
@@ -55,50 +69,52 @@ export class PgpPublicKeyInfo {
     readonly uids: string[];
 }
 
-export class PrivateKeys {
-    private constructor();
-    free(): void;
-    [Symbol.dispose](): void;
-    readonly mlkem768Secret: Uint8Array;
-    readonly threadingKey: Uint8Array;
-    readonly x25519Secret: Uint8Array;
-}
-
 export class RecoveryResult {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    readonly authKey: Uint8Array;
     readonly phrase: string;
-    readonly recoveryKey: Uint8Array;
+    readonly wrapKey: Uint8Array;
+}
+
+export class SealedMail {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly body: Uint8Array;
+    readonly metadata: Uint8Array;
+}
+
+export class SplitKeys {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly authKey: Uint8Array;
+    readonly wrapKey: Uint8Array;
 }
 
 export function computeSubjectHash(threading_key: Uint8Array | number[], subject: string): Uint8Array;
 
-export function decryptBundleWithRecovery(recovery_key: Uint8Array | number[], recovery_encrypted_bundle: Uint8Array | number[]): Uint8Array;
+export function decryptPrivateBundle(account_key: Uint8Array | number[], encrypted_bundle: Uint8Array | number[]): Uint8Array;
 
-export function decryptMessage(x25519_private: Uint8Array | number[], mlkem_private: Uint8Array | number[], sealed_bytes: Uint8Array | number[]): Uint8Array;
+export function derivePasswordKeys(password: string, salt: Uint8Array | number[]): SplitKeys;
 
-export function decryptMetadata(key: Uint8Array | number[], ciphertext: Uint8Array | number[]): Uint8Array;
+export function generateAccountKey(): Uint8Array;
 
-export function decryptPrivateKeys(master_key: Uint8Array | number[], encrypted_bundle: Uint8Array | number[]): PrivateKeys;
-
-export function deriveMasterKey(password: string, salt: Uint8Array | number[]): Uint8Array;
-
-export function encryptBundleForRecovery(recovery_key: Uint8Array | number[], private_bundle_plaintext: Uint8Array | number[]): Uint8Array;
-
-export function encryptDraft(own_x25519_pub: Uint8Array | number[], own_mlkem_pub: Uint8Array | number[], plaintext: Uint8Array | number[]): Uint8Array;
-
-export function encryptMessage(recipient_x25519_pub: Uint8Array | number[], recipient_mlkem_pub: Uint8Array | number[], plaintext: Uint8Array | number[]): Uint8Array;
-
-export function encryptMetadata(key: Uint8Array | number[], plaintext: Uint8Array | number[]): Uint8Array;
-
-export function generateIdentityKeys(master_key: Uint8Array | number[]): IdentityKeys;
+export function generateIdentityKeys(account_key: Uint8Array | number[]): IdentityKeys;
 
 export function generateRecoveryPhrase(): RecoveryResult;
 
 export function generateSalt(): Uint8Array;
 
-export function hashRecoveryKey(recovery_key: Uint8Array | number[]): Uint8Array;
+export function hashRecoveryAuthKey(auth_key: Uint8Array | number[]): Uint8Array;
+
+export function mailSignatureKeyVersion(signature: Uint8Array | number[]): number;
+
+export function openMail(private_bundle: Uint8Array | number[], kind: string, sealed: Uint8Array | number[]): OpenedMail;
+
+export function openRecord(private_bundle: Uint8Array | number[], kind: string, sealed: Uint8Array | number[]): Uint8Array;
 
 export function pgpDecryptMessage(armored_secrets: Uint8Array[], armored_ciphertext: Uint8Array | number[]): PgpDecryptResult;
 
@@ -114,42 +130,61 @@ export function pgpImportKey(input: Uint8Array | number[], passphrase?: string |
 
 export function pgpKeyInfo(armored_public: Uint8Array | number[]): PgpPublicKeyInfo;
 
-export function recoveryKeyFromPhrase(phrase: string): Uint8Array;
+export function recoveryKeysFromPhrase(phrase: string): SplitKeys;
 
-export function sealForRecipient(recipient_x25519_pub: Uint8Array | number[], recipient_mlkem_pub: Uint8Array | number[], plaintext_body: Uint8Array | number[]): Uint8Array;
+export function rotateIdentityKeys(account_key: Uint8Array | number[], private_bundle: Uint8Array | number[]): IdentityKeys;
 
-export function sealMetadataForRecipient(recipient_x25519_pub: Uint8Array | number[], recipient_mlkem_pub: Uint8Array | number[], metadata_json: Uint8Array | number[]): Uint8Array;
+export function sealMailForRecipient(recipient_x25519_pub: Uint8Array | number[], recipient_mlkem_pub: Uint8Array | number[], private_bundle: Uint8Array | number[], signing_address: string | null | undefined, body: Uint8Array | number[], metadata: Uint8Array | number[]): SealedMail;
+
+export function sealMailForSelf(private_bundle: Uint8Array | number[], body: Uint8Array | number[], metadata: Uint8Array | number[]): SealedMail;
+
+export function sealRecord(private_bundle: Uint8Array | number[], kind: string, plaintext: Uint8Array | number[]): Uint8Array;
 
 export function start(): void;
+
+export function threadingKeyFromBundle(private_bundle: Uint8Array | number[]): Uint8Array;
+
+export function unwrapAccountKey(wrap_key: Uint8Array | number[], wrapped: Uint8Array | number[], purpose: string): Uint8Array;
+
+export function verifyMailSignature(signature: Uint8Array | number[], ed25519_public: Uint8Array | number[], mldsa65_public: Uint8Array | number[], sender_address: string, recipient_key_hash: Uint8Array | number[], binding_id: Uint8Array | number[], body: Uint8Array | number[], metadata: Uint8Array | number[]): boolean;
+
+export function wrapAccountKey(wrap_key: Uint8Array | number[], account_key: Uint8Array | number[], purpose: string): Uint8Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_identitykeys_free: (a: number, b: number) => void;
+    readonly __wbg_openedmail_free: (a: number, b: number) => void;
     readonly __wbg_pgpdecryptresult_free: (a: number, b: number) => void;
     readonly __wbg_pgpgeneratedkey_free: (a: number, b: number) => void;
     readonly __wbg_pgpimportedkey_free: (a: number, b: number) => void;
     readonly __wbg_pgppublickeyinfo_free: (a: number, b: number) => void;
-    readonly __wbg_privatekeys_free: (a: number, b: number) => void;
     readonly __wbg_recoveryresult_free: (a: number, b: number) => void;
+    readonly __wbg_sealedmail_free: (a: number, b: number) => void;
+    readonly __wbg_splitkeys_free: (a: number, b: number) => void;
     readonly computeSubjectHash: (a: number, b: number, c: number, d: number) => [number, number];
-    readonly decryptBundleWithRecovery: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly decryptMessage: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly decryptMetadata: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly decryptPrivateKeys: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly deriveMasterKey: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly encryptBundleForRecovery: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly encryptDraft: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly encryptMessage: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly encryptMetadata: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly decryptPrivateBundle: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly derivePasswordKeys: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly generateAccountKey: () => [number, number];
     readonly generateIdentityKeys: (a: number, b: number) => [number, number, number];
-    readonly generateRecoveryPhrase: () => number;
+    readonly generateRecoveryPhrase: () => [number, number, number];
     readonly generateSalt: () => [number, number];
-    readonly hashRecoveryKey: (a: number, b: number) => [number, number];
+    readonly hashRecoveryAuthKey: (a: number, b: number) => [number, number];
+    readonly identitykeys_ed25519Public: (a: number) => [number, number];
     readonly identitykeys_encryptedPrivateBundle: (a: number) => [number, number];
+    readonly identitykeys_keyVersion: (a: number) => number;
+    readonly identitykeys_mldsa65Public: (a: number) => [number, number];
     readonly identitykeys_mlkem768Public: (a: number) => [number, number];
     readonly identitykeys_x25519Public: (a: number) => [number, number];
+    readonly mailSignatureKeyVersion: (a: number, b: number) => [number, number, number];
+    readonly openMail: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly openRecord: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly openedmail_bindingId: (a: number) => [number, number];
+    readonly openedmail_plaintext: (a: number) => [number, number];
+    readonly openedmail_recipientKeyHash: (a: number) => [number, number];
+    readonly openedmail_selfSealed: (a: number) => number;
+    readonly openedmail_signature: (a: number) => [number, number];
     readonly pgpDecryptMessage: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly pgpDecryptMessageVerified: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly pgpEncryptToRecipients: (a: number, b: number, c: number, d: number) => [number, number, number, number];
@@ -180,15 +215,23 @@ export interface InitOutput {
     readonly pgppublickeyinfo_isExpired: (a: number) => number;
     readonly pgppublickeyinfo_isRevoked: (a: number) => number;
     readonly pgppublickeyinfo_uids: (a: number) => [number, number];
-    readonly privatekeys_mlkem768Secret: (a: number) => [number, number];
-    readonly privatekeys_threadingKey: (a: number) => [number, number];
-    readonly privatekeys_x25519Secret: (a: number) => [number, number];
-    readonly recoveryKeyFromPhrase: (a: number, b: number) => [number, number, number, number];
+    readonly recoveryKeysFromPhrase: (a: number, b: number) => [number, number, number];
+    readonly recoveryresult_authKey: (a: number) => [number, number];
     readonly recoveryresult_phrase: (a: number) => [number, number];
-    readonly recoveryresult_recoveryKey: (a: number) => [number, number];
-    readonly sealForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly sealMetadataForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly recoveryresult_wrapKey: (a: number) => [number, number];
+    readonly rotateIdentityKeys: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly sealMailForRecipient: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
+    readonly sealMailForSelf: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly sealRecord: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly sealedmail_body: (a: number) => [number, number];
+    readonly sealedmail_metadata: (a: number) => [number, number];
+    readonly splitkeys_authKey: (a: number) => [number, number];
+    readonly splitkeys_wrapKey: (a: number) => [number, number];
     readonly start: () => void;
+    readonly threadingKeyFromBundle: (a: number, b: number) => [number, number, number, number];
+    readonly unwrapAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly verifyMailSignature: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number) => number;
+    readonly wrapAccountKey: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

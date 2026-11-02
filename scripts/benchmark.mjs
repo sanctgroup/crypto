@@ -45,29 +45,28 @@ function measure(name, fn, payloadBytes = 0, slow = false) {
 
 const key = new Uint8Array(32).fill(0x42);
 const salt = new Uint8Array(32).fill(0x17);
-measure('deriveMasterKey/64MiB,t=3,p=1', () => api.deriveMasterKey('benchmark password', salt), 0, true);
+measure('derivePasswordKeys/64MiB,t=3,p=1', () => { const v = api.derivePasswordKeys('benchmark password', salt); v.free(); }, 0, true);
 measure('generateIdentityKeys', () => { const v = api.generateIdentityKeys(key); v.free(); });
 const identity = api.generateIdentityKeys(key);
 const xPublic = identity.x25519Public;
 const mlPublic = identity.mlkem768Public;
 const privateBundle = identity.encryptedPrivateBundle;
-const privateKeys = api.decryptPrivateKeys(key, privateBundle);
-const xSecret = privateKeys.x25519Secret;
-const mlSecret = privateKeys.mlkem768Secret;
-measure('decryptPrivateKeys', () => { const v = api.decryptPrivateKeys(key, privateBundle); v.free(); });
+const keyBundle = api.decryptPrivateBundle(key, privateBundle);
+measure('decryptPrivateBundle', () => api.decryptPrivateBundle(key, privateBundle));
 measure('computeSubjectHash', () => api.computeSubjectHash(key, 'Re: Fwd: Benchmark subject'));
 measure('generateRecoveryPhrase', () => { const v = api.generateRecoveryPhrase(); v.free(); });
 
+const benchMetadata = new Uint8Array(256).fill(0x6e);
 for (const size of [0, 1024, 65536, 1048576, 8388608]) {
   const plain = new Uint8Array(size).fill(0x6d);
-  const symmetric = api.encryptMetadata(key, plain);
-  const envelope = api.encryptMessage(xPublic, mlPublic, plain);
-  assert.deepEqual(api.decryptMetadata(key, symmetric), plain);
-  assert.deepEqual(api.decryptMessage(xSecret, mlSecret, envelope), plain);
-  measure(`encryptMetadata/${size}`, () => api.encryptMetadata(key, plain), size);
-  measure(`decryptMetadata/${size}`, () => api.decryptMetadata(key, symmetric), size);
-  measure(`encryptMessage/${size}`, () => api.encryptMessage(xPublic, mlPublic, plain), size);
-  measure(`decryptMessage/${size}`, () => api.decryptMessage(xSecret, mlSecret, envelope), size);
+  const record = api.sealRecord(keyBundle, 'contact', plain);
+  const sealed = api.sealMailForRecipient(xPublic, mlPublic, keyBundle, 'bench@example.invalid', plain, benchMetadata);
+  assert.deepEqual(api.openRecord(keyBundle, 'contact', record), plain);
+  assert.deepEqual(api.openMail(keyBundle, 'mail-body', sealed.body).plaintext, plain);
+  measure(`sealRecord/${size}`, () => api.sealRecord(keyBundle, 'contact', plain), size);
+  measure(`openRecord/${size}`, () => api.openRecord(keyBundle, 'contact', record), size);
+  measure(`sealMailForRecipient/${size}`, () => { const v = api.sealMailForRecipient(xPublic, mlPublic, keyBundle, 'bench@example.invalid', plain, benchMetadata); v.free(); }, size);
+  measure(`openMail/${size}`, () => { const v = api.openMail(keyBundle, 'mail-body', sealed.body); v.free(); }, size);
 }
 
 measure('pgpGenerateKey', () => { const v = api.pgpGenerateKey('Benchmark', 'bench@example.invalid'); v.free(); });
@@ -84,7 +83,6 @@ measure('pgpEncrypt/1024', () => api.pgpEncryptToRecipients([publicPgp], pgpPlai
 measure('pgpDecrypt/1024', () => { const v = api.pgpDecryptMessage([secretPgp], pgpCipher); v.free(); }, 1024);
 pgp.free();
 identity.free();
-privateKeys.free();
 const result = { measuredAt: new Date().toISOString(), node: process.version, v8: process.versions.v8,
   platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model, bundle,
   wasmSha256: createHash('sha256').update(bytes).digest('hex'), wasmBytes: bytes.length,

@@ -1,6 +1,6 @@
 [package]
 name = "sanct-crypto"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "Apache-2.0"
 publish = false
@@ -8,6 +8,8 @@ publish = false
 [dependencies]
 x25519-dalek = { workspace = true }
 ml-kem = { workspace = true }
+ml-dsa = { workspace = true }
+ed25519-dalek = { workspace = true }
 chacha20poly1305 = { workspace = true }
 hkdf = { workspace = true }
 sha2 = { workspace = true }

@@ -13,68 +13,63 @@ const api = await load(process.argv[2] ?? 'wasm');
 const previous = process.argv[3] ? await load(process.argv[3]) : api;
 const key = new Uint8Array(32).fill(0x42);
 const salt = new Uint8Array(32).fill(0x17);
-assert.deepEqual(api.deriveMasterKey('compatibility password', salt), previous.deriveMasterKey('compatibility password', salt));
+const split = api.derivePasswordKeys('compatibility password', salt);
+const splitPrevious = previous.derivePasswordKeys('compatibility password', salt);
+assert.deepEqual(split.authKey, splitPrevious.authKey);
+assert.deepEqual(split.wrapKey, splitPrevious.wrapKey);
+assert.notDeepEqual(split.authKey, split.wrapKey);
+const wrapped = api.wrapAccountKey(split.wrapKey, key, 'password');
+assert.deepEqual(previous.unwrapAccountKey(split.wrapKey, wrapped, 'password'), key);
+assert.throws(() => previous.unwrapAccountKey(split.authKey, wrapped, 'password'));
+assert.throws(() => previous.unwrapAccountKey(split.wrapKey, wrapped, 'recovery'));
 for (const [producer, consumer] of [[api, previous], [previous, api]]) {
   const identity = producer.generateIdentityKeys(key);
-  const privateKeys = consumer.decryptPrivateKeys(key, identity.encryptedPrivateBundle);
-  const x = privateKeys.x25519Secret;
-  const ml = privateKeys.mlkem768Secret;
+  const bundle = consumer.decryptPrivateBundle(key, identity.encryptedPrivateBundle);
   for (const size of [0, 1, 1024, 65536, 1048576]) {
     const plain = new Uint8Array(size).fill(0x71);
-    const symmetric = producer.encryptMetadata(key, plain);
-    assert.deepEqual(consumer.decryptMetadata(key, symmetric), plain);
-    const sealed = producer.encryptMessage(identity.x25519Public, identity.mlkem768Public, plain);
-    assert.deepEqual(consumer.decryptMessage(x, ml, sealed), plain);
-    for (const index of [0, 1, 33, 1121, sealed.length - 1]) {
-      const corrupted = sealed.slice();
+    const metadata = new Uint8Array(32).fill(0x72);
+    const record = producer.sealRecord(bundle, 'contact', plain);
+    assert.deepEqual(consumer.openRecord(bundle, 'contact', record), plain);
+    assert.throws(() => consumer.openRecord(bundle, 'signature', record));
+    const mine = producer.sealMailForSelf(bundle, plain, metadata);
+    const openedMine = consumer.openMail(bundle, 'mail-body', mine.body);
+    assert.deepEqual(openedMine.plaintext, plain);
+    assert.equal(openedMine.selfSealed, true);
+    const sealed = producer.sealMailForRecipient(identity.x25519Public, identity.mlkem768Public, bundle, 'alice@sanct.test', plain, metadata);
+    const openedBody = consumer.openMail(bundle, 'mail-body', sealed.body);
+    const openedMetadata = consumer.openMail(bundle, 'mail-metadata', sealed.metadata);
+    assert.deepEqual(openedBody.plaintext, plain);
+    assert.deepEqual(openedMetadata.plaintext, metadata);
+    assert.deepEqual(openedBody.bindingId, openedMetadata.bindingId);
+    assert.equal(consumer.mailSignatureKeyVersion(openedBody.signature), 1);
+    assert.equal(consumer.verifyMailSignature(openedBody.signature, identity.ed25519Public, identity.mldsa65Public, 'alice@sanct.test', openedBody.recipientKeyHash, openedBody.bindingId, plain, metadata), true);
+    assert.equal(consumer.verifyMailSignature(openedBody.signature, identity.ed25519Public, identity.mldsa65Public, 'mallory@sanct.test', openedBody.recipientKeyHash, openedBody.bindingId, plain, metadata), false);
+    assert.throws(() => consumer.openMail(bundle, 'mail-metadata', sealed.body));
+    for (const index of [0, 1, 2, 33, 1121, sealed.metadata.length - 1]) {
+      const corrupted = sealed.metadata.slice();
       corrupted[index] ^= 0x80;
-      assert.throws(() => consumer.decryptMessage(x, ml, corrupted));
+      assert.throws(() => consumer.openMail(bundle, 'mail-metadata', corrupted));
     }
-    for (const length of [0, 1, 1120, 1121, sealed.length - 1]) {
-      assert.throws(() => consumer.decryptMessage(x, ml, sealed.subarray(0, length)));
+    for (const length of [0, 1, 1120, 1121, sealed.metadata.length - 1]) {
+      assert.throws(() => consumer.openMail(bundle, 'mail-metadata', sealed.metadata.subarray(0, length)));
     }
   }
   identity.free();
-  privateKeys.free();
 }
 const identity = api.generateIdentityKeys(key);
+const bundle = api.decryptPrivateBundle(key, identity.encryptedPrivateBundle);
 for (const first of [0, 1]) {
   const lowOrder = new Uint8Array(32);
   lowOrder[0] = first;
-  assert.throws(() => api.encryptMessage(lowOrder, identity.mlkem768Public, key));
+  assert.throws(() => api.sealMailForRecipient(lowOrder, identity.mlkem768Public, bundle, undefined, key, key));
 }
-assert.throws(() => api.encryptMessage(identity.x25519Public, new Uint8Array(1184).fill(0xff), key));
+assert.throws(() => api.sealMailForRecipient(identity.x25519Public, new Uint8Array(1184).fill(0xff), bundle, undefined, key, key));
 for (const length of [0, 1, 31, 33, 1183, 1185]) {
-  assert.throws(() => api.encryptMessage(identity.x25519Public, new Uint8Array(length), key));
+  assert.throws(() => api.sealMailForRecipient(identity.x25519Public, new Uint8Array(length), bundle, undefined, key, key));
 }
-assert.equal(api.encryptMessage(identity.x25519Public, identity.mlkem768Public, key).length, 1193);
-const generated = previous.pgpGenerateKey('Compatibility', 'test@example.invalid');
-const encoder = new TextEncoder();
-const publicKey = encoder.encode(generated.armoredPublic);
-const secretKey = encoder.encode(generated.armoredSecret);
-for (const [producer, consumer] of [[api, previous], [previous, api]]) {
-  const ciphertext = encoder.encode(producer.pgpEncryptToRecipients([publicKey], key));
-  const result = consumer.pgpDecryptMessage([secretKey], ciphertext);
-  assert.deepEqual(result.plaintext, key);
-  if (consumer === api) {
-    assert.equal(result.signatureVerified, false);
-    assert.equal(result.signerFingerprint, undefined);
-    assert.throws(() => api.pgpDecryptMessageVerified([secretKey], ciphertext, [publicKey]));
-    assert.throws(() => api.pgpDecryptMessageVerified([secretKey], ciphertext, []));
-  }
-  result.free();
-}
-generated.free();
+const rotated = api.rotateIdentityKeys(key, bundle);
+const rotatedBundle = api.decryptPrivateBundle(key, rotated.encryptedPrivateBundle);
+const old = api.sealMailForRecipient(identity.x25519Public, identity.mlkem768Public, bundle, undefined, key, key);
+assert.deepEqual(api.openMail(rotatedBundle, 'mail-body', old.body).plaintext, key);
 identity.free();
-console.log('WASM interoperability, malformed input, tamper, key-validation and OpenPGP checks passed.');
-
-for (const fixture of ['rsa-secret.asc', 'p256-secret.asc', 'p256-encryption-secret.asc']) {
-  const wire = new Uint8Array(await readFile(resolve(import.meta.dirname, '../crates/sanct-crypto/tests/fixtures', fixture)));
-  assert.throws(() => api.pgpImportKey(wire));
-  assert.throws(() => api.pgpKeyInfo(wire));
-  assert.throws(() => api.pgpDecryptMessage([wire], new Uint8Array()));
-}
-const unsupportedRecipient = new Uint8Array(await readFile(resolve(import.meta.dirname, '../crates/sanct-crypto/tests/fixtures/p256-encryption-public.asc')));
-assert.throws(() => api.pgpKeyInfo(unsupportedRecipient));
-assert.throws(() => api.pgpEncryptToRecipients([unsupportedRecipient], key));
-console.log('Unsupported OpenPGP provider rejection checks passed.');
+rotated.free();

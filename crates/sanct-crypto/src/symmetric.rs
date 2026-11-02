@@ -1,4 +1,4 @@
-use chacha20poly1305::aead::{Aead, AeadInOut, KeyInit};
+use chacha20poly1305::aead::{Aead, AeadInOut, KeyInit, Payload};
 use chacha20poly1305::XChaCha20Poly1305;
 use zeroize::Zeroizing;
 
@@ -6,12 +6,13 @@ use crate::CryptoError;
 
 const NONCE_LEN: usize = 24;
 
-pub fn encrypt(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
-    encrypt_into(key, plaintext, Vec::new())
+pub fn encrypt(key: &[u8], aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    encrypt_into(key, aad, plaintext, Vec::new())
 }
 
 pub(crate) fn encrypt_into(
     key: &[u8],
+    aad: &[u8],
     plaintext: &[u8],
     output: Vec<u8>,
 ) -> Result<Vec<u8>, CryptoError> {
@@ -31,13 +32,13 @@ pub(crate) fn encrypt_into(
     let payload_start = output.len();
     output.extend_from_slice(plaintext);
     let tag = cipher
-        .encrypt_inout_detached(&nonce.into(), b"", (&mut output[payload_start..]).into())
+        .encrypt_inout_detached(&nonce.into(), aad, (&mut output[payload_start..]).into())
         .map_err(|_| CryptoError::EncryptionFailed)?;
     output.extend_from_slice(&tag);
     Ok(std::mem::take(&mut *output))
 }
 
-pub fn decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+pub fn decrypt(key: &[u8], aad: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
     if key.len() != 32 {
         return Err(CryptoError::InvalidKeyLength(key.len()));
     }
@@ -54,7 +55,13 @@ pub fn decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
         .map_err(|_| CryptoError::InvalidCiphertext)?;
 
     cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ciphertext,
+                aad,
+            },
+        )
         .map_err(|_| CryptoError::DecryptionFailed)
 }
 
@@ -63,50 +70,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_encrypt_decrypt_roundtrip() {
+    fn roundtrip_with_aad() {
         let key = [0xABu8; 32];
-        let plaintext = b"hello world, this is a test message for Sanct";
-        let encrypted = encrypt(&key, plaintext).unwrap();
-        let decrypted = decrypt(&key, &encrypted).unwrap();
-        assert_eq!(plaintext.as_slice(), decrypted.as_slice());
+        let sealed = encrypt(&key, b"context", b"hello").unwrap();
+        assert_eq!(decrypt(&key, b"context", &sealed).unwrap(), b"hello");
     }
 
     #[test]
-    fn test_wrong_key_fails() {
+    fn wrong_aad_fails() {
         let key = [0xABu8; 32];
-        let wrong_key = [0xCDu8; 32];
-        let encrypted = encrypt(&key, b"secret").unwrap();
-        assert!(decrypt(&wrong_key, &encrypted).is_err());
+        let sealed = encrypt(&key, b"context", b"hello").unwrap();
+        assert!(decrypt(&key, b"other", &sealed).is_err());
     }
 
     #[test]
-    fn test_tampered_ciphertext_fails() {
-        let key = [0xABu8; 32];
-        let mut encrypted = encrypt(&key, b"secret").unwrap();
-        let last = encrypted.len() - 1;
-        encrypted[last] ^= 0xFF;
-        assert!(decrypt(&key, &encrypted).is_err());
+    fn wrong_key_fails() {
+        let sealed = encrypt(&[0xABu8; 32], b"context", b"hello").unwrap();
+        assert!(decrypt(&[0xCDu8; 32], b"context", &sealed).is_err());
     }
 
     #[test]
-    fn test_empty_plaintext() {
+    fn tampered_ciphertext_fails() {
         let key = [0xABu8; 32];
-        let encrypted = encrypt(&key, b"").unwrap();
-        let decrypted = decrypt(&key, &encrypted).unwrap();
-        assert!(decrypted.is_empty());
+        let mut sealed = encrypt(&key, b"context", b"hello").unwrap();
+        let last = sealed.len() - 1;
+        sealed[last] ^= 0xFF;
+        assert!(decrypt(&key, b"context", &sealed).is_err());
     }
 
     #[test]
-    fn test_invalid_key_length() {
-        assert!(encrypt(&[0u8; 16], b"test").is_err());
+    fn invalid_key_length_rejected() {
+        assert!(encrypt(&[0u8; 16], b"", b"x").is_err());
+        assert!(decrypt(&[0u8; 16], b"", &[0u8; 64]).is_err());
     }
 
     #[test]
-    fn test_large_payload() {
-        let key = [0xABu8; 32];
-        let plaintext = vec![0x42u8; 1024 * 1024];
-        let encrypted = encrypt(&key, &plaintext).unwrap();
-        let decrypted = decrypt(&key, &encrypted).unwrap();
-        assert_eq!(plaintext, decrypted);
+    fn short_ciphertext_rejected() {
+        assert!(decrypt(&[0u8; 32], b"", &[0u8; 10]).is_err());
     }
 }

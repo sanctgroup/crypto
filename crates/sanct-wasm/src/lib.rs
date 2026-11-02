@@ -10,6 +10,9 @@ pub fn start() {
 pub struct IdentityKeys {
     pub(crate) x25519_public: Vec<u8>,
     pub(crate) mlkem768_public: Vec<u8>,
+    pub(crate) ed25519_public: Vec<u8>,
+    pub(crate) mldsa65_public: Vec<u8>,
+    pub(crate) key_version: u32,
     pub(crate) encrypted_private_bundle: Vec<u8>,
 }
 
@@ -25,35 +28,57 @@ impl IdentityKeys {
         self.mlkem768_public.clone()
     }
 
+    #[wasm_bindgen(getter, js_name = "ed25519Public")]
+    pub fn ed25519_public(&self) -> Vec<u8> {
+        self.ed25519_public.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = "mldsa65Public")]
+    pub fn mldsa65_public(&self) -> Vec<u8> {
+        self.mldsa65_public.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = "keyVersion")]
+    pub fn key_version(&self) -> u32 {
+        self.key_version
+    }
+
     #[wasm_bindgen(getter, js_name = "encryptedPrivateBundle")]
     pub fn encrypted_private_bundle(&self) -> Vec<u8> {
         self.encrypted_private_bundle.clone()
     }
 }
 
-#[wasm_bindgen]
-#[derive(Zeroize, ZeroizeOnDrop)]
-pub struct PrivateKeys {
-    pub(crate) x25519_secret: Vec<u8>,
-    pub(crate) mlkem768_secret: Vec<u8>,
-    pub(crate) threading_key: Vec<u8>,
+impl From<sanct_crypto::keys::IdentityKeyBundle> for IdentityKeys {
+    fn from(bundle: sanct_crypto::keys::IdentityKeyBundle) -> Self {
+        Self {
+            x25519_public: bundle.x25519_public,
+            mlkem768_public: bundle.mlkem768_public,
+            ed25519_public: bundle.ed25519_public,
+            mldsa65_public: bundle.mldsa65_public,
+            key_version: bundle.key_version,
+            encrypted_private_bundle: bundle.encrypted_private_bundle,
+        }
+    }
 }
 
 #[wasm_bindgen]
-impl PrivateKeys {
-    #[wasm_bindgen(getter, js_name = "x25519Secret")]
-    pub fn x25519_secret(&self) -> Vec<u8> {
-        self.x25519_secret.clone()
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct SplitKeys {
+    pub(crate) auth_key: Vec<u8>,
+    pub(crate) wrap_key: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl SplitKeys {
+    #[wasm_bindgen(getter, js_name = "authKey")]
+    pub fn auth_key(&self) -> Vec<u8> {
+        self.auth_key.clone()
     }
 
-    #[wasm_bindgen(getter, js_name = "mlkem768Secret")]
-    pub fn mlkem768_secret(&self) -> Vec<u8> {
-        self.mlkem768_secret.clone()
-    }
-
-    #[wasm_bindgen(getter, js_name = "threadingKey")]
-    pub fn threading_key(&self) -> Vec<u8> {
-        self.threading_key.clone()
+    #[wasm_bindgen(getter, js_name = "wrapKey")]
+    pub fn wrap_key(&self) -> Vec<u8> {
+        self.wrap_key.clone()
     }
 }
 
@@ -61,7 +86,8 @@ impl PrivateKeys {
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RecoveryResult {
     pub(crate) phrase: String,
-    pub(crate) recovery_key: Vec<u8>,
+    pub(crate) auth_key: Vec<u8>,
+    pub(crate) wrap_key: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -71,10 +97,82 @@ impl RecoveryResult {
         self.phrase.clone()
     }
 
-    #[wasm_bindgen(getter, js_name = "recoveryKey")]
-    pub fn recovery_key(&self) -> Vec<u8> {
-        self.recovery_key.clone()
+    #[wasm_bindgen(getter, js_name = "authKey")]
+    pub fn auth_key(&self) -> Vec<u8> {
+        self.auth_key.clone()
     }
+
+    #[wasm_bindgen(getter, js_name = "wrapKey")]
+    pub fn wrap_key(&self) -> Vec<u8> {
+        self.wrap_key.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub struct SealedMail {
+    pub(crate) body: Vec<u8>,
+    pub(crate) metadata: Vec<u8>,
+}
+
+#[wasm_bindgen]
+impl SealedMail {
+    #[wasm_bindgen(getter)]
+    pub fn body(&self) -> Vec<u8> {
+        self.body.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn metadata(&self) -> Vec<u8> {
+        self.metadata.clone()
+    }
+}
+
+#[wasm_bindgen]
+pub struct OpenedMail {
+    pub(crate) plaintext: Vec<u8>,
+    pub(crate) binding_id: Vec<u8>,
+    pub(crate) self_sealed: bool,
+    pub(crate) recipient_key_hash: Option<Vec<u8>>,
+    pub(crate) signature: Option<Vec<u8>>,
+}
+
+impl Drop for OpenedMail {
+    fn drop(&mut self) {
+        self.plaintext.zeroize();
+    }
+}
+
+#[wasm_bindgen]
+impl OpenedMail {
+    #[wasm_bindgen(getter)]
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = "bindingId")]
+    pub fn binding_id(&self) -> Vec<u8> {
+        self.binding_id.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = "selfSealed")]
+    pub fn self_sealed(&self) -> bool {
+        self.self_sealed
+    }
+
+    #[wasm_bindgen(getter, js_name = "recipientKeyHash")]
+    pub fn recipient_key_hash(&self) -> Option<Vec<u8>> {
+        self.recipient_key_hash.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn signature(&self) -> Option<Vec<u8>> {
+        self.signature.clone()
+    }
+}
+
+fn parse_bundle(bundle: Vec<u8>) -> Result<sanct_crypto::keys::PrivateKeys, JsError> {
+    let bundle = Zeroizing::new(bundle);
+    Ok(sanct_crypto::keys::parse_private_keys(bundle.as_slice())?)
 }
 
 #[wasm_bindgen(js_name = "generateSalt")]
@@ -82,113 +180,208 @@ pub fn generate_salt() -> Vec<u8> {
     sanct_crypto::password::generate_salt().to_vec()
 }
 
-#[wasm_bindgen(js_name = "deriveMasterKey")]
-pub fn derive_master_key(password: String, salt: &[u8]) -> Result<Vec<u8>, JsError> {
+#[wasm_bindgen(js_name = "derivePasswordKeys")]
+pub fn derive_password_keys(password: String, salt: &[u8]) -> Result<SplitKeys, JsError> {
     let password = Zeroizing::new(password);
-    let password = password.as_str();
-    Ok(sanct_crypto::password::derive_master_key(password.as_bytes(), salt)?.to_vec())
+    let keys = sanct_crypto::password::derive_password_keys(password.as_bytes(), salt)?;
+    Ok(SplitKeys {
+        auth_key: keys.auth_key.to_vec(),
+        wrap_key: keys.wrap_key.to_vec(),
+    })
+}
+
+#[wasm_bindgen(js_name = "generateAccountKey")]
+pub fn generate_account_key() -> Vec<u8> {
+    sanct_crypto::keys::generate_account_key().to_vec()
+}
+
+#[wasm_bindgen(js_name = "wrapAccountKey")]
+pub fn wrap_account_key(
+    wrap_key: Vec<u8>,
+    account_key: Vec<u8>,
+    purpose: String,
+) -> Result<Vec<u8>, JsError> {
+    let wrap_key = Zeroizing::new(wrap_key);
+    let account_key = Zeroizing::new(account_key);
+    let purpose = sanct_crypto::keys::WrapPurpose::parse(&purpose)?;
+    Ok(sanct_crypto::keys::wrap_account_key(
+        wrap_key.as_slice(),
+        account_key.as_slice(),
+        purpose,
+    )?)
+}
+
+#[wasm_bindgen(js_name = "unwrapAccountKey")]
+pub fn unwrap_account_key(
+    wrap_key: Vec<u8>,
+    wrapped: &[u8],
+    purpose: String,
+) -> Result<Vec<u8>, JsError> {
+    let wrap_key = Zeroizing::new(wrap_key);
+    let purpose = sanct_crypto::keys::WrapPurpose::parse(&purpose)?;
+    let account_key =
+        sanct_crypto::keys::unwrap_account_key(wrap_key.as_slice(), wrapped, purpose)?;
+    Ok(account_key.to_vec())
 }
 
 #[wasm_bindgen(js_name = "generateIdentityKeys")]
-pub fn generate_identity_keys(master_key: Vec<u8>) -> Result<IdentityKeys, JsError> {
-    let master_key = Zeroizing::new(master_key);
-    let master_key = master_key.as_slice();
-    let bundle = sanct_crypto::keys::generate_identity_keys(master_key)?;
-    Ok(IdentityKeys {
-        x25519_public: bundle.x25519_public,
-        mlkem768_public: bundle.mlkem768_public,
-        encrypted_private_bundle: bundle.encrypted_private_bundle,
-    })
+pub fn generate_identity_keys(account_key: Vec<u8>) -> Result<IdentityKeys, JsError> {
+    let account_key = Zeroizing::new(account_key);
+    Ok(sanct_crypto::keys::generate_identity_keys(account_key.as_slice())?.into())
 }
 
-#[wasm_bindgen(js_name = "decryptPrivateKeys")]
-pub fn decrypt_private_keys(
-    master_key: Vec<u8>,
+#[wasm_bindgen(js_name = "rotateIdentityKeys")]
+pub fn rotate_identity_keys(
+    account_key: Vec<u8>,
+    private_bundle: Vec<u8>,
+) -> Result<IdentityKeys, JsError> {
+    let account_key = Zeroizing::new(account_key);
+    let keys = parse_bundle(private_bundle)?;
+    Ok(sanct_crypto::keys::rotate_identity_keys(account_key.as_slice(), &keys)?.into())
+}
+
+#[wasm_bindgen(js_name = "decryptPrivateBundle")]
+pub fn decrypt_private_bundle(
+    account_key: Vec<u8>,
     encrypted_bundle: &[u8],
-) -> Result<PrivateKeys, JsError> {
-    let master_key = Zeroizing::new(master_key);
-    let master_key = master_key.as_slice();
-    let keys = sanct_crypto::keys::decrypt_private_bundle(master_key, encrypted_bundle)?;
-    Ok(PrivateKeys {
-        x25519_secret: keys.x25519_secret.clone(),
-        mlkem768_secret: keys.mlkem768_secret.clone(),
-        threading_key: keys.threading_key.clone(),
-    })
+) -> Result<Vec<u8>, JsError> {
+    let account_key = Zeroizing::new(account_key);
+    Ok(
+        sanct_crypto::keys::decrypt_private_bundle(account_key.as_slice(), encrypted_bundle)?
+            .to_vec(),
+    )
 }
 
-#[wasm_bindgen(js_name = "encryptMessage")]
-pub fn encrypt_message(
+#[wasm_bindgen(js_name = "threadingKeyFromBundle")]
+pub fn threading_key_from_bundle(private_bundle: Vec<u8>) -> Result<Vec<u8>, JsError> {
+    let keys = parse_bundle(private_bundle)?;
+    Ok(keys.threading_key.clone())
+}
+
+#[wasm_bindgen(js_name = "sealMailForRecipient")]
+pub fn seal_mail_for_recipient(
     recipient_x25519_pub: &[u8],
     recipient_mlkem_pub: &[u8],
-    plaintext: Vec<u8>,
-) -> Result<Vec<u8>, JsError> {
-    let plaintext = Zeroizing::new(plaintext);
-    let plaintext = plaintext.as_slice();
-    Ok(sanct_crypto::envelope::SealedEnvelope::seal_to_bytes(
+    private_bundle: Vec<u8>,
+    signing_address: Option<String>,
+    body: Vec<u8>,
+    metadata: Vec<u8>,
+) -> Result<SealedMail, JsError> {
+    let keys = parse_bundle(private_bundle)?;
+    let body = Zeroizing::new(body);
+    let metadata = Zeroizing::new(metadata);
+    let signer = signing_address
+        .as_deref()
+        .map(|sender_address| sanct_crypto::envelope::Signer {
+            keys: &keys,
+            sender_address,
+        });
+    let sealed = sanct_crypto::envelope::seal_mail(
         recipient_x25519_pub,
         recipient_mlkem_pub,
-        plaintext,
-    )?)
+        body.as_slice(),
+        metadata.as_slice(),
+        signer,
+    )?;
+    Ok(SealedMail {
+        body: sealed.body,
+        metadata: sealed.metadata,
+    })
 }
 
-#[wasm_bindgen(js_name = "decryptMessage")]
-pub fn decrypt_message(
-    x25519_private: Vec<u8>,
-    mlkem_private: Vec<u8>,
-    sealed_bytes: &[u8],
-) -> Result<Vec<u8>, JsError> {
-    let x25519_private = Zeroizing::new(x25519_private);
-    let x25519_private = x25519_private.as_slice();
-    let mlkem_private = Zeroizing::new(mlkem_private);
-    let mlkem_private = mlkem_private.as_slice();
-    Ok(sanct_crypto::envelope::SealedEnvelope::open_bytes(
-        x25519_private,
-        mlkem_private,
-        sealed_bytes,
-    )?)
+#[wasm_bindgen(js_name = "sealMailForSelf")]
+pub fn seal_mail_for_self(
+    private_bundle: Vec<u8>,
+    body: Vec<u8>,
+    metadata: Vec<u8>,
+) -> Result<SealedMail, JsError> {
+    let keys = parse_bundle(private_bundle)?;
+    let body = Zeroizing::new(body);
+    let metadata = Zeroizing::new(metadata);
+    let sealed =
+        sanct_crypto::envelope::seal_mail_for_self(&keys, body.as_slice(), metadata.as_slice())?;
+    Ok(SealedMail {
+        body: sealed.body,
+        metadata: sealed.metadata,
+    })
 }
 
-#[wasm_bindgen(js_name = "sealForRecipient")]
-pub fn seal_for_recipient(
-    recipient_x25519_pub: &[u8],
-    recipient_mlkem_pub: &[u8],
-    plaintext_body: Vec<u8>,
-) -> Result<Vec<u8>, JsError> {
-    encrypt_message(recipient_x25519_pub, recipient_mlkem_pub, plaintext_body)
+#[wasm_bindgen(js_name = "openMail")]
+pub fn open_mail(
+    private_bundle: Vec<u8>,
+    kind: String,
+    sealed: &[u8],
+) -> Result<OpenedMail, JsError> {
+    let keys = parse_bundle(private_bundle)?;
+    let kind = sanct_crypto::envelope::RecordKind::parse(&kind)?;
+    let opened = sanct_crypto::envelope::open_mail(&keys, kind, sealed)?;
+    Ok(OpenedMail {
+        plaintext: opened.plaintext.to_vec(),
+        binding_id: opened.binding_id.to_vec(),
+        self_sealed: opened.self_sealed,
+        recipient_key_hash: opened.recipient_key_hash.map(|hash| hash.to_vec()),
+        signature: opened.signature.clone(),
+    })
 }
 
-#[wasm_bindgen(js_name = "sealMetadataForRecipient")]
-pub fn seal_metadata_for_recipient(
-    recipient_x25519_pub: &[u8],
-    recipient_mlkem_pub: &[u8],
-    metadata_json: Vec<u8>,
-) -> Result<Vec<u8>, JsError> {
-    encrypt_message(recipient_x25519_pub, recipient_mlkem_pub, metadata_json)
+#[wasm_bindgen(js_name = "mailSignatureKeyVersion")]
+pub fn mail_signature_key_version(signature: &[u8]) -> Result<u32, JsError> {
+    Ok(sanct_crypto::signing::signature_key_version(signature)?)
 }
 
-#[wasm_bindgen(js_name = "encryptDraft")]
-pub fn encrypt_draft(
-    own_x25519_pub: &[u8],
-    own_mlkem_pub: &[u8],
+#[allow(clippy::too_many_arguments)]
+#[wasm_bindgen(js_name = "verifyMailSignature")]
+pub fn verify_mail_signature(
+    signature: &[u8],
+    ed25519_public: &[u8],
+    mldsa65_public: &[u8],
+    sender_address: &str,
+    recipient_key_hash: &[u8],
+    binding_id: &[u8],
+    body: Vec<u8>,
+    metadata: Vec<u8>,
+) -> bool {
+    let body = Zeroizing::new(body);
+    let metadata = Zeroizing::new(metadata);
+    sanct_crypto::signing::verify_mail(
+        signature,
+        ed25519_public,
+        mldsa65_public,
+        &sanct_crypto::signing::MailTranscript {
+            sender_address,
+            recipient_key_hash,
+            binding_id,
+            body: body.as_slice(),
+            metadata: metadata.as_slice(),
+        },
+    )
+}
+
+#[wasm_bindgen(js_name = "sealRecord")]
+pub fn seal_record(
+    private_bundle: Vec<u8>,
+    kind: String,
     plaintext: Vec<u8>,
 ) -> Result<Vec<u8>, JsError> {
-    encrypt_message(own_x25519_pub, own_mlkem_pub, plaintext)
-}
-
-#[wasm_bindgen(js_name = "encryptMetadata")]
-pub fn encrypt_metadata(key: Vec<u8>, plaintext: Vec<u8>) -> Result<Vec<u8>, JsError> {
-    let key = Zeroizing::new(key);
-    let key = key.as_slice();
+    let keys = parse_bundle(private_bundle)?;
     let plaintext = Zeroizing::new(plaintext);
-    let plaintext = plaintext.as_slice();
-    Ok(sanct_crypto::symmetric::encrypt(key, plaintext)?)
+    let kind = sanct_crypto::envelope::RecordKind::parse(&kind)?;
+    Ok(sanct_crypto::envelope::seal_record(
+        &keys,
+        kind,
+        plaintext.as_slice(),
+    )?)
 }
 
-#[wasm_bindgen(js_name = "decryptMetadata")]
-pub fn decrypt_metadata(key: Vec<u8>, ciphertext: &[u8]) -> Result<Vec<u8>, JsError> {
-    let key = Zeroizing::new(key);
-    let key = key.as_slice();
-    Ok(sanct_crypto::symmetric::decrypt(key, ciphertext)?)
+#[wasm_bindgen(js_name = "openRecord")]
+pub fn open_record(
+    private_bundle: Vec<u8>,
+    kind: String,
+    sealed: &[u8],
+) -> Result<Vec<u8>, JsError> {
+    let keys = parse_bundle(private_bundle)?;
+    let kind = sanct_crypto::envelope::RecordKind::parse(&kind)?;
+    Ok(sanct_crypto::envelope::open_record(&keys, kind, sealed)?.to_vec())
 }
 
 #[wasm_bindgen(js_name = "computeSubjectHash")]
@@ -201,54 +394,29 @@ pub fn compute_subject_hash(threading_key: Vec<u8>, subject: String) -> Vec<u8> 
 }
 
 #[wasm_bindgen(js_name = "generateRecoveryPhrase")]
-pub fn generate_recovery_phrase() -> RecoveryResult {
-    let mut rp = sanct_crypto::recovery::generate_recovery_phrase();
-    RecoveryResult {
-        phrase: std::mem::take(&mut rp.phrase),
-        recovery_key: rp.recovery_key.to_vec(),
-    }
+pub fn generate_recovery_phrase() -> Result<RecoveryResult, JsError> {
+    let mut generated = sanct_crypto::recovery::generate_recovery_phrase()?;
+    Ok(RecoveryResult {
+        phrase: std::mem::take(&mut generated.phrase),
+        auth_key: generated.keys.auth_key.to_vec(),
+        wrap_key: generated.keys.wrap_key.to_vec(),
+    })
 }
 
-#[wasm_bindgen(js_name = "recoveryKeyFromPhrase")]
-pub fn recovery_key_from_phrase(phrase: String) -> Result<Vec<u8>, JsError> {
+#[wasm_bindgen(js_name = "recoveryKeysFromPhrase")]
+pub fn recovery_keys_from_phrase(phrase: String) -> Result<SplitKeys, JsError> {
     let phrase = Zeroizing::new(phrase);
-    let phrase = phrase.as_str();
-    Ok(sanct_crypto::recovery::recovery_key_from_phrase(phrase)?.to_vec())
+    let keys = sanct_crypto::recovery::recovery_keys_from_phrase(phrase.as_str())?;
+    Ok(SplitKeys {
+        auth_key: keys.auth_key.to_vec(),
+        wrap_key: keys.wrap_key.to_vec(),
+    })
 }
 
-#[wasm_bindgen(js_name = "hashRecoveryKey")]
-pub fn hash_recovery_key(recovery_key: Vec<u8>) -> Vec<u8> {
-    let recovery_key = Zeroizing::new(recovery_key);
-    let recovery_key = recovery_key.as_slice();
-    sanct_crypto::recovery::hash_recovery_key(recovery_key)
-}
-
-#[wasm_bindgen(js_name = "encryptBundleForRecovery")]
-pub fn encrypt_bundle_for_recovery(
-    recovery_key: Vec<u8>,
-    private_bundle_plaintext: Vec<u8>,
-) -> Result<Vec<u8>, JsError> {
-    let recovery_key = Zeroizing::new(recovery_key);
-    let recovery_key = recovery_key.as_slice();
-    let private_bundle_plaintext = Zeroizing::new(private_bundle_plaintext);
-    let private_bundle_plaintext = private_bundle_plaintext.as_slice();
-    Ok(sanct_crypto::recovery::encrypt_bundle_for_recovery(
-        recovery_key,
-        private_bundle_plaintext,
-    )?)
-}
-
-#[wasm_bindgen(js_name = "decryptBundleWithRecovery")]
-pub fn decrypt_bundle_with_recovery(
-    recovery_key: Vec<u8>,
-    recovery_encrypted_bundle: &[u8],
-) -> Result<Vec<u8>, JsError> {
-    let recovery_key = Zeroizing::new(recovery_key);
-    let recovery_key = recovery_key.as_slice();
-    Ok(sanct_crypto::recovery::decrypt_bundle_with_recovery(
-        recovery_key,
-        recovery_encrypted_bundle,
-    )?)
+#[wasm_bindgen(js_name = "hashRecoveryAuthKey")]
+pub fn hash_recovery_auth_key(auth_key: Vec<u8>) -> Vec<u8> {
+    let auth_key = Zeroizing::new(auth_key);
+    sanct_crypto::recovery::hash_recovery_auth_key(auth_key.as_slice())
 }
 
 #[wasm_bindgen]
@@ -538,131 +706,133 @@ pub fn pgp_decrypt_message_verified(
 mod tests {
     use super::*;
 
-    #[test]
-    fn master_key_and_identity_roundtrip() {
-        let salt = generate_salt();
-        let master_key =
-            derive_master_key("correct horse battery staple".to_owned(), &salt).unwrap();
-
-        let identity = generate_identity_keys(master_key.to_vec()).unwrap();
-        let private =
-            decrypt_private_keys(master_key.to_vec(), &identity.encrypted_private_bundle).unwrap();
-
-        assert_eq!(identity.x25519_public.len(), 32);
-        assert!(!identity.mlkem768_public.is_empty());
-        assert_eq!(private.x25519_secret.len(), 32);
-        assert!(!private.mlkem768_secret.is_empty());
-        assert_eq!(private.threading_key.len(), 32);
+    fn unlocked(account_key: &[u8; 32], identity: &IdentityKeys) -> Vec<u8> {
+        decrypt_private_bundle(account_key.to_vec(), &identity.encrypted_private_bundle).unwrap()
     }
 
     #[test]
-    fn envelope_roundtrip() {
-        let master_key = [0x42; 32];
-        let identity = generate_identity_keys(master_key.to_vec()).unwrap();
-        let private =
-            decrypt_private_keys(master_key.to_vec(), &identity.encrypted_private_bundle).unwrap();
-
-        let plaintext = b"wasm envelope roundtrip";
-        let sealed = encrypt_message(
-            &identity.x25519_public,
-            &identity.mlkem768_public,
-            plaintext.to_vec(),
-        )
-        .unwrap();
-        let decrypted = decrypt_message(
-            private.x25519_secret.to_vec(),
-            private.mlkem768_secret.to_vec(),
-            &sealed,
-        )
-        .unwrap();
-        assert_eq!(decrypted, plaintext);
-
-        let draft = encrypt_draft(
-            &identity.x25519_public,
-            &identity.mlkem768_public,
-            plaintext.to_vec(),
-        )
-        .unwrap();
-        let decrypted_draft = decrypt_message(
-            private.x25519_secret.to_vec(),
-            private.mlkem768_secret.to_vec(),
-            &draft,
-        )
-        .unwrap();
-        assert_eq!(decrypted_draft, plaintext);
-    }
-
-    #[test]
-    fn metadata_and_subject_hash_roundtrip() {
+    fn subject_hash_normalizes() {
         let key = [7u8; 32];
-        let plaintext = br#"{"subject":"Plans","from":"alice@sanct.local"}"#;
-
-        let encrypted = encrypt_metadata(key.to_vec(), plaintext.to_vec()).unwrap();
-        let decrypted = decrypt_metadata(key.to_vec(), &encrypted).unwrap();
-        assert_eq!(decrypted, plaintext);
-
         let hash = compute_subject_hash(key.to_vec(), "Re: Plans".to_owned());
         let expected = sanct_crypto::keys::compute_subject_hash(&key, "Plans");
         assert_eq!(hash, expected);
     }
 
     #[test]
-    fn recipient_sealing_roundtrip() {
-        let master_key = [0x24; 32];
-        let identity = generate_identity_keys(master_key.to_vec()).unwrap();
-        let private =
-            decrypt_private_keys(master_key.to_vec(), &identity.encrypted_private_bundle).unwrap();
+    fn signed_mail_roundtrip() {
+        let account_key = [0x24; 32];
+        let identity = generate_identity_keys(account_key.to_vec()).unwrap();
+        let bundle = unlocked(&account_key, &identity);
 
         let body = b"sealed body";
         let metadata = br#"{"subject":"sealed metadata"}"#;
-
-        let sealed_body = seal_for_recipient(
+        let sealed = seal_mail_for_recipient(
             &identity.x25519_public,
             &identity.mlkem768_public,
+            bundle.clone(),
+            Some("alice@sanct.test".to_owned()),
             body.to_vec(),
-        )
-        .unwrap();
-        let sealed_metadata = seal_metadata_for_recipient(
-            &identity.x25519_public,
-            &identity.mlkem768_public,
             metadata.to_vec(),
         )
         .unwrap();
 
+        let opened_body = open_mail(bundle.clone(), "mail-body".into(), &sealed.body).unwrap();
+        let opened_metadata =
+            open_mail(bundle.clone(), "mail-metadata".into(), &sealed.metadata).unwrap();
+        assert_eq!(opened_body.plaintext, body);
+        assert_eq!(opened_metadata.plaintext, metadata);
+        assert_eq!(opened_body.binding_id, opened_metadata.binding_id);
+        assert!(!opened_body.self_sealed);
+
+        let signature = opened_body.signature.clone().unwrap();
+        assert_eq!(mail_signature_key_version(&signature).unwrap(), 1);
+        let hash = opened_body.recipient_key_hash.clone().unwrap();
+        assert!(verify_mail_signature(
+            &signature,
+            &identity.ed25519_public,
+            &identity.mldsa65_public,
+            "alice@sanct.test",
+            &hash,
+            &opened_body.binding_id,
+            body.to_vec(),
+            metadata.to_vec(),
+        ));
+        assert!(!verify_mail_signature(
+            &signature,
+            &identity.ed25519_public,
+            &identity.mldsa65_public,
+            "mallory@sanct.test",
+            &hash,
+            &opened_body.binding_id,
+            body.to_vec(),
+            metadata.to_vec(),
+        ));
+    }
+
+    #[test]
+    fn self_records_and_mail_roundtrip() {
+        let account_key = [0x25; 32];
+        let identity = generate_identity_keys(account_key.to_vec()).unwrap();
+        let bundle = unlocked(&account_key, &identity);
+
+        let sealed = seal_record(bundle.clone(), "contact".into(), b"contact".to_vec()).unwrap();
         assert_eq!(
-            decrypt_message(
-                private.x25519_secret.to_vec(),
-                private.mlkem768_secret.to_vec(),
-                &sealed_body,
-            )
-            .unwrap(),
-            body
+            open_record(bundle.clone(), "contact".into(), &sealed).unwrap(),
+            b"contact"
+        );
+
+        let mail = seal_mail_for_self(bundle.clone(), b"body".to_vec(), b"meta".to_vec()).unwrap();
+        let opened = open_mail(bundle, "mail-body".into(), &mail.body).unwrap();
+        assert!(opened.self_sealed);
+        assert_eq!(opened.plaintext, b"body");
+    }
+
+    #[test]
+    fn account_key_wrap_and_recovery_roundtrip() {
+        let account_key = generate_account_key();
+        let recovery = generate_recovery_phrase().unwrap();
+        let derived = recovery_keys_from_phrase(recovery.phrase.clone()).unwrap();
+        assert_eq!(derived.auth_key, recovery.auth_key);
+        assert_eq!(derived.wrap_key, recovery.wrap_key);
+
+        let wrapped = wrap_account_key(
+            derived.wrap_key.clone(),
+            account_key.clone(),
+            "recovery".into(),
+        )
+        .unwrap();
+        assert_eq!(
+            unwrap_account_key(derived.wrap_key.clone(), &wrapped, "recovery".into()).unwrap(),
+            account_key
         );
         assert_eq!(
-            decrypt_message(
-                private.x25519_secret.to_vec(),
-                private.mlkem768_secret.to_vec(),
-                &sealed_metadata,
-            )
-            .unwrap(),
-            metadata
+            hash_recovery_auth_key(derived.auth_key.clone()),
+            sanct_crypto::recovery::hash_recovery_auth_key(&recovery.auth_key)
         );
     }
 
     #[test]
-    fn recovery_roundtrip() {
-        let result = generate_recovery_phrase();
-        let derived = recovery_key_from_phrase(result.phrase.to_owned()).unwrap();
-        assert_eq!(derived, result.recovery_key);
-
-        let payload = b"encrypted-private-bundle";
-        let encrypted = encrypt_bundle_for_recovery(derived.to_vec(), payload.to_vec()).unwrap();
-        let decrypted = decrypt_bundle_with_recovery(derived.to_vec(), &encrypted).unwrap();
-        assert_eq!(decrypted, payload);
-
+    fn rotation_retains_old_mail() {
+        let account_key = [0x26; 32];
+        let first = generate_identity_keys(account_key.to_vec()).unwrap();
+        let first_bundle = unlocked(&account_key, &first);
+        let old = seal_mail_for_recipient(
+            &first.x25519_public,
+            &first.mlkem768_public,
+            first_bundle.clone(),
+            None,
+            b"old".to_vec(),
+            b"meta".to_vec(),
+        )
+        .unwrap();
+        let second = rotate_identity_keys(account_key.to_vec(), first_bundle).unwrap();
+        assert_eq!(second.key_version, 2);
+        let second_bundle = unlocked(&account_key, &second);
         assert_eq!(
-            hash_recovery_key(derived.to_vec()),
-            sanct_crypto::recovery::hash_recovery_key(&result.recovery_key)
+            open_mail(second_bundle, "mail-body".into(), &old.body)
+                .unwrap()
+                .plaintext,
+            b"old"
         );
     }
 }

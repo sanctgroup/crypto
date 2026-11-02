@@ -2,29 +2,34 @@ import init from "../wasm/sanct_wasm.js";
 
 export {
   type IdentityKeys,
-  type PrivateKeys,
+  type SplitKeys,
+  type SealedMail,
+  type OpenedMail,
   type RecoveryResult,
   type PgpGeneratedKey,
   type PgpImportedKey,
   type PgpPublicKeyInfo,
   type PgpDecryptResult,
   generateSalt,
-  deriveMasterKey,
+  derivePasswordKeys,
+  generateAccountKey,
+  wrapAccountKey,
+  unwrapAccountKey,
   generateIdentityKeys,
-  decryptPrivateKeys,
-  encryptMessage,
-  decryptMessage,
-  sealForRecipient,
-  sealMetadataForRecipient,
-  encryptDraft,
-  encryptMetadata,
-  decryptMetadata,
+  rotateIdentityKeys,
+  decryptPrivateBundle,
+  threadingKeyFromBundle,
+  sealMailForRecipient,
+  sealMailForSelf,
+  openMail,
+  mailSignatureKeyVersion,
+  verifyMailSignature,
+  sealRecord,
+  openRecord,
   computeSubjectHash,
   generateRecoveryPhrase,
-  recoveryKeyFromPhrase,
-  hashRecoveryKey,
-  encryptBundleForRecovery,
-  decryptBundleWithRecovery,
+  recoveryKeysFromPhrase,
+  hashRecoveryAuthKey,
   pgpGenerateKey,
   pgpImportKey,
   pgpExportKey,
@@ -68,8 +73,7 @@ export function classifyPgpError(message: string): PgpImportFailureReason | "unk
 }
 
 export interface UnlockedKeys {
-  readonly x25519Secret: Uint8Array;
-  readonly mlkem768Secret: Uint8Array;
+  readonly bundle: Uint8Array;
   readonly threadingKey: Uint8Array;
 }
 

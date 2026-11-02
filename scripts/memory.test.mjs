@@ -8,12 +8,14 @@ test('WASM argument and output buffers release plaintext without retaining the f
   const raw = api.initSync({ module });
   const key = new Uint8Array(32).fill(0x73);
   const plain = new TextEncoder().encode('fixture-only plaintext marker for checking native input and output cleanup');
-  const ciphertext = api.encryptMetadata(key, plain);
+  const identity = api.generateIdentityKeys(key);
+  const bundle = api.decryptPrivateBundle(key, identity.encryptedPrivateBundle);
+  const ciphertext = api.sealRecord(bundle, 'contact', plain);
   assert.equal(Buffer.from(raw.memory.buffer).includes(plain), false);
-  assert.deepEqual(api.decryptMetadata(key, ciphertext), plain);
+  assert.deepEqual(api.openRecord(bundle, 'contact', ciphertext), plain);
   assert.equal(Buffer.from(raw.memory.buffer).includes(plain), false);
   assert.equal(key[0], 0x73);
   const password = 'fixture-only-password-marker-used-to-check-native-argument-cleanup';
-  api.deriveMasterKey(password, new Uint8Array(32).fill(0x18));
+  api.derivePasswordKeys(password, new Uint8Array(32).fill(0x18));
   assert.equal(Buffer.from(raw.memory.buffer).includes(Buffer.from(password)), false);
 });

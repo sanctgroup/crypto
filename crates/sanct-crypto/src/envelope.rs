@@ -1,426 +1,638 @@
-use crate::hybrid;
-use crate::symmetric;
-use crate::CryptoError;
+use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-const ENVELOPE_VERSION: u8 = 2;
-const ENVELOPE_VERSION_LEGACY_V1: u8 = 1;
-const X25519_PUB_LEN: usize = 32;
-const HEADER_LEN: usize = 1 + X25519_PUB_LEN + hybrid::MLKEM_CIPHERTEXT_LEN;
+use crate::hybrid;
+use crate::keys::PrivateKeys;
+use crate::signing::{self, MailTranscript};
+use crate::symmetric;
+use crate::CryptoError;
 
-/// Wire format: `[version | x25519_ephemeral | mlkem_ct | nonce | ciphertext | tag]`
-pub struct SealedEnvelope {
-    pub version: u8,
-    pub x25519_ephemeral_public: [u8; X25519_PUB_LEN],
-    pub mlkem_ciphertext: [u8; hybrid::MLKEM_CIPHERTEXT_LEN],
-    pub encrypted_payload: Vec<u8>,
+const SEALED_VERSION: u8 = 3;
+const SELF_VERSION: u8 = 4;
+const X25519_PUB_LEN: usize = 32;
+pub const BINDING_ID_LEN: usize = 16;
+const PREFIX_LEN: usize = 2 + BINDING_ID_LEN;
+const SEALED_HEADER_LEN: usize = PREFIX_LEN + X25519_PUB_LEN + hybrid::MLKEM_CIPHERTEXT_LEN;
+const AEAD_OVERHEAD: usize = 24 + 16;
+const SIGNATURE_LEN_PREFIX: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RecordKind {
+    MailBody = 1,
+    MailMetadata = 2,
+    Contact = 3,
+    Signature = 4,
+    CalendarEvent = 5,
 }
 
-impl SealedEnvelope {
-    pub fn seal_to_bytes(
-        recipient_x25519_public: &[u8],
-        recipient_mlkem_public: &[u8],
-        plaintext: &[u8],
-    ) -> Result<Vec<u8>, CryptoError> {
-        let encap = hybrid::encapsulate(recipient_x25519_public, recipient_mlkem_public)?;
-        let mut output = Vec::with_capacity(HEADER_LEN + 24 + plaintext.len() + 16);
-        output.push(ENVELOPE_VERSION);
-        output.extend_from_slice(&encap.x25519_ephemeral_public);
-        output.extend_from_slice(&encap.mlkem_ciphertext);
-        symmetric::encrypt_into(&encap.shared_secret, plaintext, output)
-    }
-
-    pub fn open_bytes(
-        x25519_private: &[u8],
-        mlkem_private: &[u8],
-        data: &[u8],
-    ) -> Result<Vec<u8>, CryptoError> {
-        if data.len() < HEADER_LEN + 24 + 16 {
-            return Err(CryptoError::InvalidCiphertext);
+impl RecordKind {
+    pub fn parse(value: &str) -> Result<Self, CryptoError> {
+        match value {
+            "mail-body" => Ok(Self::MailBody),
+            "mail-metadata" => Ok(Self::MailMetadata),
+            "contact" => Ok(Self::Contact),
+            "signature" => Ok(Self::Signature),
+            "calendar-event" => Ok(Self::CalendarEvent),
+            _ => Err(CryptoError::InvalidCiphertext),
         }
-        Self::open_payload(
-            data[0],
-            data[1..1 + X25519_PUB_LEN]
-                .try_into()
-                .map_err(|_| CryptoError::InvalidCiphertext)?,
-            data[1 + X25519_PUB_LEN..HEADER_LEN]
-                .try_into()
-                .map_err(|_| CryptoError::InvalidCiphertext)?,
-            &data[HEADER_LEN..],
-            x25519_private,
-            mlkem_private,
-        )
     }
 
-    pub fn seal(
-        recipient_x25519_public: &[u8],
-        recipient_mlkem_public: &[u8],
-        plaintext: &[u8],
-    ) -> Result<Self, CryptoError> {
-        let encap = hybrid::encapsulate(recipient_x25519_public, recipient_mlkem_public)?;
-        let encrypted_payload = symmetric::encrypt(&encap.shared_secret, plaintext)?;
-
-        Ok(Self {
-            version: ENVELOPE_VERSION,
-            x25519_ephemeral_public: encap.x25519_ephemeral_public,
-            mlkem_ciphertext: encap.mlkem_ciphertext,
-            encrypted_payload,
-        })
+    fn is_mail(self) -> bool {
+        matches!(self, Self::MailBody | Self::MailMetadata)
     }
+}
 
-    pub fn open(
-        &self,
-        x25519_private: &[u8],
-        mlkem_private: &[u8],
-    ) -> Result<Vec<u8>, CryptoError> {
-        Self::open_payload(
-            self.version,
-            &self.x25519_ephemeral_public,
-            &self.mlkem_ciphertext,
-            &self.encrypted_payload,
-            x25519_private,
-            mlkem_private,
-        )
-    }
+pub struct SealedMail {
+    pub body: Vec<u8>,
+    pub metadata: Vec<u8>,
+    pub binding_id: [u8; BINDING_ID_LEN],
+}
 
-    fn open_payload(
-        version: u8,
-        x25519_ephemeral_public: &[u8; X25519_PUB_LEN],
-        mlkem_ciphertext: &[u8; hybrid::MLKEM_CIPHERTEXT_LEN],
-        encrypted_payload: &[u8],
-        x25519_private: &[u8],
-        mlkem_private: &[u8],
-    ) -> Result<Vec<u8>, CryptoError> {
-        let shared_secret = Zeroizing::new(match version {
-            ENVELOPE_VERSION => hybrid::decapsulate(
-                x25519_private,
-                mlkem_private,
-                x25519_ephemeral_public,
-                mlkem_ciphertext,
-            )?,
-            ENVELOPE_VERSION_LEGACY_V1 => hybrid::decapsulate_v1(
-                x25519_private,
-                mlkem_private,
-                x25519_ephemeral_public,
-                mlkem_ciphertext,
-            )?,
-            _ => return Err(CryptoError::UnsupportedVersion(version)),
-        });
+pub struct OpenedMail {
+    pub plaintext: Zeroizing<Vec<u8>>,
+    pub binding_id: [u8; BINDING_ID_LEN],
+    pub self_sealed: bool,
+    pub recipient_key_hash: Option<[u8; 32]>,
+    pub signature: Option<Vec<u8>>,
+}
 
-        symmetric::decrypt(shared_secret.as_ref(), encrypted_payload)
-    }
+pub struct Signer<'a> {
+    pub keys: &'a PrivateKeys,
+    pub sender_address: &'a str,
+}
 
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(HEADER_LEN + self.encrypted_payload.len());
-        buf.push(self.version);
-        buf.extend_from_slice(&self.x25519_ephemeral_public);
-        buf.extend_from_slice(&self.mlkem_ciphertext);
-        buf.extend_from_slice(&self.encrypted_payload);
-        buf
-    }
+fn new_binding_id() -> Result<[u8; BINDING_ID_LEN], CryptoError> {
+    let mut binding = [0u8; BINDING_ID_LEN];
+    getrandom::fill(&mut binding).map_err(|_| CryptoError::EncryptionFailed)?;
+    Ok(binding)
+}
 
-    pub fn from_bytes(data: &[u8]) -> Result<Self, CryptoError> {
-        if data.len() < HEADER_LEN + 24 + 16 {
-            return Err(CryptoError::InvalidCiphertext);
+fn sealed_aad(
+    kind: u8,
+    binding_id: &[u8],
+    recipient_key_hash: &[u8; 32],
+    ephemeral: &[u8],
+    mlkem_ciphertext: &[u8],
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"sanct-envelope-v3");
+    hasher.update([kind]);
+    hasher.update(binding_id);
+    hasher.update(recipient_key_hash);
+    hasher.update(ephemeral);
+    hasher.update(mlkem_ciphertext);
+    hasher.finalize().into()
+}
+
+fn self_aad(kind: u8, binding_id: &[u8]) -> Vec<u8> {
+    [b"sanct-self-record-v4".as_slice(), &[kind], binding_id].concat()
+}
+
+fn seal_public(
+    recipient_x25519_public: &[u8],
+    recipient_mlkem_public: &[u8],
+    kind: RecordKind,
+    binding_id: &[u8; BINDING_ID_LEN],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let encap = hybrid::encapsulate(recipient_x25519_public, recipient_mlkem_public)?;
+    let recipient_hash =
+        hybrid::recipient_key_hash(recipient_x25519_public, recipient_mlkem_public);
+    let aad = sealed_aad(
+        kind as u8,
+        binding_id,
+        &recipient_hash,
+        &encap.x25519_ephemeral_public,
+        &encap.mlkem_ciphertext,
+    );
+    let mut output = Vec::with_capacity(SEALED_HEADER_LEN + AEAD_OVERHEAD + plaintext.len());
+    output.push(SEALED_VERSION);
+    output.push(kind as u8);
+    output.extend_from_slice(binding_id);
+    output.extend_from_slice(&encap.x25519_ephemeral_public);
+    output.extend_from_slice(&encap.mlkem_ciphertext);
+    symmetric::encrypt_into(&encap.shared_secret, &aad, plaintext, output)
+}
+
+fn frame_signed_body(
+    signature: Option<&[u8]>,
+    body: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    let signature = signature.unwrap_or_default();
+    let length = u32::try_from(signature.len()).map_err(|_| CryptoError::EncryptionFailed)?;
+    let mut framed = Zeroizing::new(Vec::with_capacity(
+        SIGNATURE_LEN_PREFIX + signature.len() + body.len(),
+    ));
+    framed.extend_from_slice(&length.to_be_bytes());
+    framed.extend_from_slice(signature);
+    framed.extend_from_slice(body);
+    Ok(framed)
+}
+
+pub fn seal_mail(
+    recipient_x25519_public: &[u8],
+    recipient_mlkem_public: &[u8],
+    body: &[u8],
+    metadata: &[u8],
+    signer: Option<Signer<'_>>,
+) -> Result<SealedMail, CryptoError> {
+    let binding_id = new_binding_id()?;
+    let signature = match signer {
+        Some(signer) => {
+            let recipient_key_hash =
+                hybrid::recipient_key_hash(recipient_x25519_public, recipient_mlkem_public);
+            Some(signing::sign_mail(
+                signer.keys,
+                &MailTranscript {
+                    sender_address: signer.sender_address,
+                    recipient_key_hash: &recipient_key_hash,
+                    binding_id: &binding_id,
+                    body,
+                    metadata,
+                },
+            )?)
         }
+        None => None,
+    };
+    let framed = frame_signed_body(signature.as_deref(), body)?;
+    Ok(SealedMail {
+        body: seal_public(
+            recipient_x25519_public,
+            recipient_mlkem_public,
+            RecordKind::MailBody,
+            &binding_id,
+            &framed,
+        )?,
+        metadata: seal_public(
+            recipient_x25519_public,
+            recipient_mlkem_public,
+            RecordKind::MailMetadata,
+            &binding_id,
+            metadata,
+        )?,
+        binding_id,
+    })
+}
 
-        let version = data[0];
-        let x25519_ephemeral_public: [u8; X25519_PUB_LEN] = data[1..1 + X25519_PUB_LEN]
-            .try_into()
-            .map_err(|_| CryptoError::InvalidCiphertext)?;
-        let mlkem_ciphertext: [u8; hybrid::MLKEM_CIPHERTEXT_LEN] = data
-            [1 + X25519_PUB_LEN..HEADER_LEN]
-            .try_into()
-            .map_err(|_| CryptoError::InvalidCiphertext)?;
-        let encrypted_payload = data[HEADER_LEN..].to_vec();
+pub fn seal_mail_for_self(
+    keys: &PrivateKeys,
+    body: &[u8],
+    metadata: &[u8],
+) -> Result<SealedMail, CryptoError> {
+    let binding_id = new_binding_id()?;
+    Ok(SealedMail {
+        body: seal_self(keys, RecordKind::MailBody, &binding_id, body)?,
+        metadata: seal_self(keys, RecordKind::MailMetadata, &binding_id, metadata)?,
+        binding_id,
+    })
+}
 
-        Ok(Self {
-            version,
-            x25519_ephemeral_public,
-            mlkem_ciphertext,
-            encrypted_payload,
-        })
+fn seal_self(
+    keys: &PrivateKeys,
+    kind: RecordKind,
+    binding_id: &[u8; BINDING_ID_LEN],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let aad = self_aad(kind as u8, binding_id);
+    let mut output = Vec::with_capacity(PREFIX_LEN + AEAD_OVERHEAD + plaintext.len());
+    output.push(SELF_VERSION);
+    output.push(kind as u8);
+    output.extend_from_slice(binding_id);
+    symmetric::encrypt_into(&keys.data_key, &aad, plaintext, output)
+}
+
+pub fn seal_record(
+    keys: &PrivateKeys,
+    kind: RecordKind,
+    plaintext: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    if kind.is_mail() {
+        return Err(CryptoError::InvalidCiphertext);
     }
+    seal_self(keys, kind, &new_binding_id()?, plaintext)
+}
+
+pub fn open_record(
+    keys: &PrivateKeys,
+    kind: RecordKind,
+    data: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    if kind.is_mail() {
+        return Err(CryptoError::InvalidCiphertext);
+    }
+    let (version, data_kind, binding_id) = parse_prefix(data)?;
+    if version != SELF_VERSION {
+        return Err(CryptoError::UnsupportedVersion(version));
+    }
+    if data_kind != kind as u8 {
+        return Err(CryptoError::DecryptionFailed);
+    }
+    open_self(keys, data_kind, binding_id, data)
+}
+
+fn parse_prefix(data: &[u8]) -> Result<(u8, u8, &[u8]), CryptoError> {
+    if data.len() < PREFIX_LEN + AEAD_OVERHEAD {
+        return Err(CryptoError::InvalidCiphertext);
+    }
+    Ok((data[0], data[1], &data[2..PREFIX_LEN]))
+}
+
+fn open_self(
+    keys: &PrivateKeys,
+    kind: u8,
+    binding_id: &[u8],
+    data: &[u8],
+) -> Result<Zeroizing<Vec<u8>>, CryptoError> {
+    let aad = self_aad(kind, binding_id);
+    Ok(Zeroizing::new(symmetric::decrypt(
+        &keys.data_key,
+        &aad,
+        &data[PREFIX_LEN..],
+    )?))
+}
+
+pub fn open_mail(
+    keys: &PrivateKeys,
+    kind: RecordKind,
+    data: &[u8],
+) -> Result<OpenedMail, CryptoError> {
+    if !kind.is_mail() {
+        return Err(CryptoError::InvalidCiphertext);
+    }
+    let (version, data_kind, binding_bytes) = parse_prefix(data)?;
+    if data_kind != kind as u8 {
+        return Err(CryptoError::DecryptionFailed);
+    }
+    let mut binding_id = [0u8; BINDING_ID_LEN];
+    binding_id.copy_from_slice(binding_bytes);
+
+    match version {
+        SELF_VERSION => Ok(OpenedMail {
+            plaintext: open_self(keys, data_kind, binding_bytes, data)?,
+            binding_id,
+            self_sealed: true,
+            recipient_key_hash: None,
+            signature: None,
+        }),
+        SEALED_VERSION => open_sealed_mail(keys, kind, binding_id, data),
+        other => Err(CryptoError::UnsupportedVersion(other)),
+    }
+}
+
+fn open_sealed_mail(
+    keys: &PrivateKeys,
+    kind: RecordKind,
+    binding_id: [u8; BINDING_ID_LEN],
+    data: &[u8],
+) -> Result<OpenedMail, CryptoError> {
+    if data.len() < SEALED_HEADER_LEN + AEAD_OVERHEAD {
+        return Err(CryptoError::InvalidCiphertext);
+    }
+    let candidates = std::iter::once((&keys.x25519_secret, &keys.mlkem768_secret)).chain(
+        keys.previous
+            .iter()
+            .map(|entry| (&entry.x25519_secret, &entry.mlkem768_secret)),
+    );
+
+    for (x25519_secret, mlkem_secret) in candidates {
+        if let Ok((plaintext, recipient_key_hash)) =
+            try_open_sealed(x25519_secret, mlkem_secret, kind, &binding_id, data)
+        {
+            let (plaintext, signature) = match kind {
+                RecordKind::MailBody => split_signed_body(plaintext)?,
+                _ => (plaintext, None),
+            };
+            return Ok(OpenedMail {
+                plaintext,
+                binding_id,
+                self_sealed: false,
+                recipient_key_hash: Some(recipient_key_hash),
+                signature,
+            });
+        }
+    }
+    Err(CryptoError::DecryptionFailed)
+}
+
+fn try_open_sealed(
+    x25519_secret: &[u8],
+    mlkem_secret: &[u8],
+    kind: RecordKind,
+    binding_id: &[u8; BINDING_ID_LEN],
+    data: &[u8],
+) -> Result<(Zeroizing<Vec<u8>>, [u8; 32]), CryptoError> {
+    let ephemeral: &[u8; X25519_PUB_LEN] = data[PREFIX_LEN..PREFIX_LEN + X25519_PUB_LEN]
+        .try_into()
+        .map_err(|_| CryptoError::InvalidCiphertext)?;
+    let mlkem_ciphertext = &data[PREFIX_LEN + X25519_PUB_LEN..SEALED_HEADER_LEN];
+    let shared = Zeroizing::new(hybrid::decapsulate(
+        x25519_secret,
+        mlkem_secret,
+        ephemeral,
+        mlkem_ciphertext,
+    )?);
+    let recipient_hash = hybrid::recipient_key_hash_from_secrets(x25519_secret, mlkem_secret)?;
+    let aad = sealed_aad(
+        kind as u8,
+        binding_id,
+        &recipient_hash,
+        ephemeral,
+        mlkem_ciphertext,
+    );
+    let plaintext = Zeroizing::new(symmetric::decrypt(
+        shared.as_ref(),
+        &aad,
+        &data[SEALED_HEADER_LEN..],
+    )?);
+    Ok((plaintext, recipient_hash))
+}
+
+type SignedBody = (Zeroizing<Vec<u8>>, Option<Vec<u8>>);
+
+fn split_signed_body(framed: Zeroizing<Vec<u8>>) -> Result<SignedBody, CryptoError> {
+    if framed.len() < SIGNATURE_LEN_PREFIX {
+        return Err(CryptoError::InvalidCiphertext);
+    }
+    let mut length = [0u8; SIGNATURE_LEN_PREFIX];
+    length.copy_from_slice(&framed[..SIGNATURE_LEN_PREFIX]);
+    let length = u32::from_be_bytes(length) as usize;
+    let body_start = SIGNATURE_LEN_PREFIX
+        .checked_add(length)
+        .filter(|end| *end <= framed.len())
+        .ok_or(CryptoError::InvalidCiphertext)?;
+    let signature = (length > 0).then(|| framed[SIGNATURE_LEN_PREFIX..body_start].to_vec());
+    Ok((Zeroizing::new(framed[body_start..].to_vec()), signature))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hybrid::MlKemEncoding;
-    use crate::hybrid::{MlKemKeyPair, X25519KeyPair};
+    use crate::keys::{
+        decrypt_private_bundle, generate_identity_keys, parse_private_keys, rotate_identity_keys,
+        IdentityKeyBundle,
+    };
 
-    #[test]
-    fn test_seal_open_roundtrip() {
-        let x25519_kp = X25519KeyPair::generate();
-        let mlkem_kp = MlKemKeyPair::generate();
+    const ACCOUNT_KEY: [u8; 32] = [0x42; 32];
 
-        let plaintext = b"Hello from Sanct! This is an encrypted message.";
-
-        let sealed = SealedEnvelope::seal(
-            x25519_kp.public.as_bytes(),
-            mlkem_kp.encapsulation_key.as_bytes().as_slice(),
-            plaintext,
+    fn identity() -> (IdentityKeyBundle, PrivateKeys) {
+        let identity = generate_identity_keys(&ACCOUNT_KEY).unwrap();
+        let keys = parse_private_keys(
+            &decrypt_private_bundle(&ACCOUNT_KEY, &identity.encrypted_private_bundle).unwrap(),
         )
         .unwrap();
-
-        let decrypted = sealed
-            .open(
-                x25519_kp.secret.as_bytes(),
-                mlkem_kp.decapsulation_key.as_bytes().as_slice(),
-            )
-            .unwrap();
-
-        assert_eq!(plaintext.as_slice(), decrypted.as_slice());
+        (identity, keys)
     }
 
     #[test]
-    fn test_serialize_deserialize_roundtrip() {
-        let x25519_kp = X25519KeyPair::generate();
-        let mlkem_kp = MlKemKeyPair::generate();
-
-        let plaintext = b"serialize me";
-
-        let sealed = SealedEnvelope::seal(
-            x25519_kp.public.as_bytes(),
-            mlkem_kp.encapsulation_key.as_bytes().as_slice(),
-            plaintext,
+    fn signed_mail_roundtrip_and_verify() {
+        let (sender_id, sender) = identity();
+        let (recipient_id, recipient) = identity();
+        let sealed = seal_mail(
+            &recipient_id.x25519_public,
+            &recipient_id.mlkem768_public,
+            b"body",
+            b"metadata",
+            Some(Signer {
+                keys: &sender,
+                sender_address: "alice@sanct.test",
+            }),
         )
         .unwrap();
 
-        let bytes = sealed.to_bytes();
-        let restored = SealedEnvelope::from_bytes(&bytes).unwrap();
+        let body = open_mail(&recipient, RecordKind::MailBody, &sealed.body).unwrap();
+        let metadata = open_mail(&recipient, RecordKind::MailMetadata, &sealed.metadata).unwrap();
+        assert_eq!(&body.plaintext[..], b"body");
+        assert_eq!(&metadata.plaintext[..], b"metadata");
+        assert_eq!(body.binding_id, metadata.binding_id);
+        assert!(!body.self_sealed);
 
-        let decrypted = restored
-            .open(
-                x25519_kp.secret.as_bytes(),
-                mlkem_kp.decapsulation_key.as_bytes().as_slice(),
-            )
-            .unwrap();
-
-        assert_eq!(plaintext.as_slice(), decrypted.as_slice());
-    }
-
-    #[test]
-    fn test_wrong_recipient_fails() {
-        let x25519_kp = X25519KeyPair::generate();
-        let wrong_kp = X25519KeyPair::generate();
-        let mlkem_kp = MlKemKeyPair::generate();
-
-        let sealed = SealedEnvelope::seal(
-            x25519_kp.public.as_bytes(),
-            mlkem_kp.encapsulation_key.as_bytes().as_slice(),
-            b"secret",
-        )
-        .unwrap();
-
-        let result = sealed.open(
-            wrong_kp.secret.as_bytes(),
-            mlkem_kp.decapsulation_key.as_bytes().as_slice(),
-        );
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_large_message() {
-        let x25519_kp = X25519KeyPair::generate();
-        let mlkem_kp = MlKemKeyPair::generate();
-
-        let plaintext = vec![0xABu8; 1024 * 1024];
-
-        let sealed = SealedEnvelope::seal(
-            x25519_kp.public.as_bytes(),
-            mlkem_kp.encapsulation_key.as_bytes().as_slice(),
-            &plaintext,
-        )
-        .unwrap();
-
-        let decrypted = sealed
-            .open(
-                x25519_kp.secret.as_bytes(),
-                mlkem_kp.decapsulation_key.as_bytes().as_slice(),
-            )
-            .unwrap();
-
-        assert_eq!(plaintext, decrypted);
-    }
-
-    #[test]
-    fn test_from_bytes_too_short() {
-        let result = SealedEnvelope::from_bytes(&[0u8; 10]);
-        assert!(matches!(result, Err(CryptoError::InvalidCiphertext)));
-    }
-
-    #[test]
-    fn test_from_bytes_wrong_version() {
-        let x25519_kp = X25519KeyPair::generate();
-        let mlkem_kp = MlKemKeyPair::generate();
-
-        let sealed = SealedEnvelope::seal(
-            x25519_kp.public.as_bytes(),
-            mlkem_kp.encapsulation_key.as_bytes().as_slice(),
-            b"version test",
-        )
-        .unwrap();
-
-        let mut bytes = sealed.to_bytes();
-        bytes[0] = 99;
-
-        let restored = SealedEnvelope::from_bytes(&bytes).unwrap();
-        let result = restored.open(
-            x25519_kp.secret.as_bytes(),
-            mlkem_kp.decapsulation_key.as_bytes().as_slice(),
-        );
-        assert!(matches!(result, Err(CryptoError::UnsupportedVersion(99))));
-    }
-
-    #[test]
-    fn current_envelopes_emit_v2() {
-        let x25519_kp = X25519KeyPair::generate();
-        let mlkem_kp = MlKemKeyPair::generate();
-        let sealed = SealedEnvelope::seal(
-            x25519_kp.public.as_bytes(),
-            mlkem_kp.encapsulation_key.as_bytes().as_slice(),
-            b"hi",
-        )
-        .unwrap();
-        assert_eq!(sealed.version, ENVELOPE_VERSION);
-        assert_eq!(ENVELOPE_VERSION, 2);
-    }
-
-    #[test]
-    fn swapping_x25519_ephemeral_breaks_decap() {
-        let recipient_x = X25519KeyPair::generate();
-        let recipient_m = MlKemKeyPair::generate();
-
-        let sealed = SealedEnvelope::seal(
-            recipient_x.public.as_bytes(),
-            recipient_m.encapsulation_key.as_bytes().as_slice(),
-            b"transcript binding test",
-        )
-        .unwrap();
-
-        let other_eph = x25519_dalek::PublicKey::from(&x25519_dalek::EphemeralSecret::random());
-        let mut tampered = SealedEnvelope {
-            version: sealed.version,
-            x25519_ephemeral_public: other_eph.to_bytes(),
-            mlkem_ciphertext: sealed.mlkem_ciphertext,
-            encrypted_payload: sealed.encrypted_payload.clone(),
+        let signature = body.signature.as_ref().unwrap();
+        let recipient_hash = body.recipient_key_hash.unwrap();
+        let transcript = MailTranscript {
+            sender_address: "alice@sanct.test",
+            recipient_key_hash: &recipient_hash,
+            binding_id: &body.binding_id,
+            body: &body.plaintext,
+            metadata: &metadata.plaintext,
         };
-        tampered.x25519_ephemeral_public = other_eph.to_bytes();
-        let result = tampered.open(
-            recipient_x.secret.as_bytes(),
-            recipient_m.decapsulation_key.as_bytes().as_slice(),
-        );
-        assert!(result.is_err(), "tampered eph_pub should fail to decrypt");
+        assert!(signing::verify_mail(
+            signature,
+            &sender_id.ed25519_public,
+            &sender_id.mldsa65_public,
+            &transcript
+        ));
     }
 
     #[test]
-    fn flipping_mlkem_ciphertext_breaks_decap() {
-        let recipient_x = X25519KeyPair::generate();
-        let recipient_m = MlKemKeyPair::generate();
-
-        let sealed = SealedEnvelope::seal(
-            recipient_x.public.as_bytes(),
-            recipient_m.encapsulation_key.as_bytes().as_slice(),
-            b"transcript binding test",
+    fn server_sealed_mail_has_no_signature() {
+        let (recipient_id, recipient) = identity();
+        let sealed = seal_mail(
+            &recipient_id.x25519_public,
+            &recipient_id.mlkem768_public,
+            b"body",
+            b"metadata",
+            None,
         )
         .unwrap();
-
-        let mut tampered = SealedEnvelope {
-            version: sealed.version,
-            x25519_ephemeral_public: sealed.x25519_ephemeral_public,
-            mlkem_ciphertext: sealed.mlkem_ciphertext,
-            encrypted_payload: sealed.encrypted_payload.clone(),
-        };
-        tampered.mlkem_ciphertext[0] ^= 0x01;
-        let result = tampered.open(
-            recipient_x.secret.as_bytes(),
-            recipient_m.decapsulation_key.as_bytes().as_slice(),
-        );
-        assert!(result.is_err(), "tampered mlkem_ct should fail to decrypt");
+        let body = open_mail(&recipient, RecordKind::MailBody, &sealed.body).unwrap();
+        assert!(body.signature.is_none());
+        assert_eq!(&body.plaintext[..], b"body");
     }
 
     #[test]
-    fn v1_envelopes_still_decap_with_legacy_path() {
-        use crate::hybrid;
+    fn body_and_metadata_cannot_be_swapped() {
+        let (recipient_id, recipient) = identity();
+        let sealed = seal_mail(
+            &recipient_id.x25519_public,
+            &recipient_id.mlkem768_public,
+            b"body",
+            b"metadata",
+            None,
+        )
+        .unwrap();
+        assert!(open_mail(&recipient, RecordKind::MailBody, &sealed.metadata).is_err());
+        assert!(open_mail(&recipient, RecordKind::MailMetadata, &sealed.body).is_err());
+    }
 
-        let recipient_x = X25519KeyPair::generate();
-        let recipient_m = MlKemKeyPair::generate();
-
-        let encap = hybrid::encapsulate(
-            recipient_x.public.as_bytes(),
-            recipient_m.encapsulation_key.as_bytes().as_slice(),
+    #[test]
+    fn header_fields_are_authenticated() {
+        let (recipient_id, recipient) = identity();
+        let sealed = seal_mail(
+            &recipient_id.x25519_public,
+            &recipient_id.mlkem768_public,
+            b"body",
+            b"metadata",
+            None,
         )
         .unwrap();
 
-        let v1_shared = hybrid::decapsulate_v1(
-            recipient_x.secret.as_bytes(),
-            recipient_m.decapsulation_key.as_bytes().as_slice(),
-            &encap.x25519_ephemeral_public,
-            &encap.mlkem_ciphertext,
+        let mut wrong_binding = sealed.body.clone();
+        wrong_binding[2] ^= 1;
+        assert!(open_mail(&recipient, RecordKind::MailBody, &wrong_binding).is_err());
+
+        let mut wrong_kind = sealed.body.clone();
+        wrong_kind[1] = RecordKind::MailMetadata as u8;
+        assert!(open_mail(&recipient, RecordKind::MailMetadata, &wrong_kind).is_err());
+
+        for index in [PREFIX_LEN, PREFIX_LEN + 40, sealed.body.len() - 1] {
+            let mut tampered = sealed.body.clone();
+            tampered[index] ^= 1;
+            assert!(open_mail(&recipient, RecordKind::MailBody, &tampered).is_err());
+        }
+    }
+
+    #[test]
+    fn distinct_messages_have_distinct_bindings() {
+        let (recipient_id, recipient) = identity();
+        let one = seal_mail(
+            &recipient_id.x25519_public,
+            &recipient_id.mlkem768_public,
+            b"one",
+            b"m1",
+            None,
         )
         .unwrap();
-        let v1_payload = symmetric::encrypt(&v1_shared, b"legacy v1 message").unwrap();
+        let two = seal_mail(
+            &recipient_id.x25519_public,
+            &recipient_id.mlkem768_public,
+            b"two",
+            b"m2",
+            None,
+        )
+        .unwrap();
+        let body = open_mail(&recipient, RecordKind::MailBody, &one.body).unwrap();
+        let foreign = open_mail(&recipient, RecordKind::MailMetadata, &two.metadata).unwrap();
+        assert_ne!(body.binding_id, foreign.binding_id);
+    }
 
-        let v1_envelope = SealedEnvelope {
-            version: ENVELOPE_VERSION_LEGACY_V1,
-            x25519_ephemeral_public: encap.x25519_ephemeral_public,
-            mlkem_ciphertext: encap.mlkem_ciphertext,
-            encrypted_payload: v1_payload,
-        };
+    #[test]
+    fn wrong_recipient_fails() {
+        let (recipient_id, _) = identity();
+        let (_, other) = identity();
+        let sealed = seal_mail(
+            &recipient_id.x25519_public,
+            &recipient_id.mlkem768_public,
+            b"body",
+            b"metadata",
+            None,
+        )
+        .unwrap();
+        assert!(open_mail(&other, RecordKind::MailBody, &sealed.body).is_err());
+    }
 
-        let plaintext = v1_envelope
-            .open(
-                recipient_x.secret.as_bytes(),
-                recipient_m.decapsulation_key.as_bytes().as_slice(),
-            )
-            .unwrap();
-        assert_eq!(plaintext.as_slice(), b"legacy v1 message");
+    #[test]
+    fn self_sealed_mail_roundtrip_and_key_isolation() {
+        let (_, keys) = identity();
+        let (_, other) = identity();
+        let sealed = seal_mail_for_self(&keys, b"draft", b"draft metadata").unwrap();
+        let body = open_mail(&keys, RecordKind::MailBody, &sealed.body).unwrap();
+        assert!(body.self_sealed);
+        assert_eq!(&body.plaintext[..], b"draft");
+        assert!(open_mail(&other, RecordKind::MailBody, &sealed.body).is_err());
+    }
+
+    #[test]
+    fn records_only_open_under_data_key_and_matching_kind() {
+        let (identity_keys, keys) = identity();
+        let sealed = seal_record(&keys, RecordKind::Contact, b"contact").unwrap();
         assert_eq!(
-            SealedEnvelope::open_bytes(
-                recipient_x.secret.as_bytes(),
-                recipient_m.decapsulation_key.as_bytes().as_slice(),
-                &v1_envelope.to_bytes(),
-            )
-            .unwrap(),
-            plaintext,
+            &open_record(&keys, RecordKind::Contact, &sealed).unwrap()[..],
+            b"contact"
+        );
+        assert!(open_record(&keys, RecordKind::Signature, &sealed).is_err());
+
+        let mut relabelled = sealed.clone();
+        relabelled[1] = RecordKind::Signature as u8;
+        assert!(open_record(&keys, RecordKind::Signature, &relabelled).is_err());
+
+        let forged = seal_public(
+            &identity_keys.x25519_public,
+            &identity_keys.mlkem768_public,
+            RecordKind::Contact,
+            &[0u8; BINDING_ID_LEN],
+            b"server forged",
+        )
+        .unwrap();
+        assert!(open_record(&keys, RecordKind::Contact, &forged).is_err());
+        assert!(seal_record(&keys, RecordKind::MailBody, b"x").is_err());
+    }
+
+    #[test]
+    fn rotated_keys_still_open_old_mail() {
+        let (first_id, first) = identity();
+        let old = seal_mail(
+            &first_id.x25519_public,
+            &first_id.mlkem768_public,
+            b"old body",
+            b"old metadata",
+            None,
+        )
+        .unwrap();
+        let old_self = seal_record(&first, RecordKind::Contact, b"old contact").unwrap();
+
+        let second_id = rotate_identity_keys(&ACCOUNT_KEY, &first).unwrap();
+        let second = parse_private_keys(
+            &decrypt_private_bundle(&ACCOUNT_KEY, &second_id.encrypted_private_bundle).unwrap(),
+        )
+        .unwrap();
+
+        let opened = open_mail(&second, RecordKind::MailBody, &old.body).unwrap();
+        assert_eq!(&opened.plaintext[..], b"old body");
+        assert_eq!(
+            &open_record(&second, RecordKind::Contact, &old_self).unwrap()[..],
+            b"old contact"
+        );
+
+        let new = seal_mail(
+            &second_id.x25519_public,
+            &second_id.mlkem768_public,
+            b"new body",
+            b"new metadata",
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            &open_mail(&second, RecordKind::MailBody, &new.body)
+                .unwrap()
+                .plaintext[..],
+            b"new body"
         );
     }
 
     #[test]
-    fn wire_api_interoperates_and_rejects_corruption() {
-        let x = X25519KeyPair::generate();
-        let m = MlKemKeyPair::generate();
-        let public = m.encapsulation_key.as_bytes();
-        let private = m.decapsulation_key.as_bytes();
-        for size in [0, 1, 1024, 1024 * 1024] {
-            let plaintext = vec![0x42; size];
-            let bytes =
-                SealedEnvelope::seal_to_bytes(x.public.as_bytes(), &public, &plaintext).unwrap();
-            let parsed = SealedEnvelope::from_bytes(&bytes).unwrap();
-            assert_eq!(
-                parsed.open(x.secret.as_bytes(), &private).unwrap(),
-                plaintext
-            );
-            let owned = SealedEnvelope::seal(x.public.as_bytes(), &public, &plaintext).unwrap();
-            assert_eq!(
-                SealedEnvelope::open_bytes(x.secret.as_bytes(), &private, &owned.to_bytes())
-                    .unwrap(),
-                plaintext
-            );
-            for index in [0, 1, 33, HEADER_LEN, bytes.len() - 1] {
-                let mut corrupted = bytes.clone();
-                corrupted[index] ^= 0x80;
-                assert!(
-                    SealedEnvelope::open_bytes(x.secret.as_bytes(), &private, &corrupted).is_err()
-                );
-            }
-            for len in [0, 1, HEADER_LEN - 1, HEADER_LEN, bytes.len() - 1] {
-                assert!(
-                    SealedEnvelope::open_bytes(x.secret.as_bytes(), &private, &bytes[..len])
-                        .is_err()
-                );
-            }
+    fn signature_length_cannot_overrun_body() {
+        let framed = Zeroizing::new([u32::MAX.to_be_bytes().as_slice(), b"short"].concat());
+        assert!(split_signed_body(framed).is_err());
+        assert!(split_signed_body(Zeroizing::new(vec![0u8; 2])).is_err());
+    }
+
+    #[test]
+    fn unknown_versions_rejected() {
+        let (recipient_id, recipient) = identity();
+        for version in [0u8, 1, 2, 9] {
+            let sealed = seal_mail(
+                &recipient_id.x25519_public,
+                &recipient_id.mlkem768_public,
+                b"body",
+                b"metadata",
+                None,
+            )
+            .unwrap();
+            let mut data = sealed.body;
+            data[0] = version;
+            assert!(matches!(
+                open_mail(&recipient, RecordKind::MailBody, &data),
+                Err(CryptoError::UnsupportedVersion(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn truncated_data_rejected() {
+        let (_, keys) = identity();
+        for length in [0, 1, 17, 40, 57] {
+            assert!(open_mail(&keys, RecordKind::MailBody, &vec![3u8; length]).is_err());
         }
     }
 }

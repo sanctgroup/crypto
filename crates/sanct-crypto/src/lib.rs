@@ -4,6 +4,7 @@ pub mod keys;
 pub mod password;
 pub mod pgp;
 pub mod recovery;
+pub mod signing;
 pub mod symmetric;
 
 #[cfg(feature = "wasm")]

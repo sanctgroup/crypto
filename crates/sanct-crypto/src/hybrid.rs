@@ -3,7 +3,7 @@ use ml_kem::kem::{Decapsulate, Encapsulate};
 #[allow(deprecated)]
 use ml_kem::ExpandedKeyEncoding;
 use ml_kem::{DecapsulationKey, EncapsulationKey, Kem, KeyExport, MlKem768};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
@@ -115,22 +115,6 @@ pub fn decapsulate(
     )
 }
 
-#[doc(hidden)]
-pub fn decapsulate_v1(
-    x25519_private: &[u8],
-    mlkem_private: &[u8],
-    x25519_ephemeral_public: &[u8; 32],
-    mlkem_ciphertext: &[u8],
-) -> Result<[u8; SHARED_SECRET_LEN], CryptoError> {
-    let (x25519_shared, mlkem_shared) = decapsulate_raw(
-        x25519_private,
-        mlkem_private,
-        x25519_ephemeral_public,
-        mlkem_ciphertext,
-    )?;
-    combine_shared_secrets_v1(x25519_shared.as_ref(), mlkem_shared.as_ref())
-}
-
 type Ss = Zeroizing<[u8; SHARED_SECRET_LEN]>;
 
 fn decapsulate_raw(
@@ -160,6 +144,28 @@ fn decapsulate_raw(
     mlkem_ss.as_mut_slice().zeroize();
 
     Ok((x_buf, m_buf))
+}
+
+pub fn recipient_key_hash(x25519_public: &[u8], mlkem_public: &[u8]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"sanct-recipient-key-v1");
+    hasher.update(x25519_public);
+    hasher.update(mlkem_public);
+    hasher.finalize().into()
+}
+
+pub fn recipient_key_hash_from_secrets(
+    x25519_private: &[u8],
+    mlkem_private: &[u8],
+) -> Result<[u8; 32], CryptoError> {
+    let secret = StaticSecret::from(
+        <[u8; 32]>::try_from(x25519_private)
+            .map_err(|_| CryptoError::InvalidKeyLength(x25519_private.len()))?,
+    );
+    let public = PublicKey::from(&secret);
+    let dk = dk_from_bytes(mlkem_private)?;
+    let ek = dk.encapsulation_key().to_bytes();
+    Ok(recipient_key_hash(public.as_bytes(), ek.as_slice()))
 }
 
 fn ek_from_bytes(bytes: &[u8]) -> Result<EncapsulationKey<MlKem768>, CryptoError> {
@@ -199,28 +205,6 @@ impl MlKemEncoding for DecapsulationKey<MlKem768> {
 
 fn ct_from_bytes(bytes: &[u8]) -> Result<ml_kem::Ciphertext<MlKem768>, CryptoError> {
     bytes.try_into().map_err(|_| CryptoError::InvalidCiphertext)
-}
-
-fn combine_shared_secrets_v1(
-    x25519_shared: &[u8],
-    mlkem_shared: &[u8],
-) -> Result<[u8; SHARED_SECRET_LEN], CryptoError> {
-    if x25519_shared.len() != SHARED_SECRET_LEN || mlkem_shared.len() != SHARED_SECRET_LEN {
-        return Err(CryptoError::KeyDerivation(
-            "unexpected hybrid shared secret length".into(),
-        ));
-    }
-
-    let mut ikm = Zeroizing::new([0u8; SHARED_SECRET_LEN * 2]);
-    ikm[..SHARED_SECRET_LEN].copy_from_slice(x25519_shared);
-    ikm[SHARED_SECRET_LEN..].copy_from_slice(mlkem_shared);
-
-    let hk = Hkdf::<Sha256>::new(Some(b"sanct-hybrid-kem-v1"), ikm.as_ref());
-    let mut output = [0u8; SHARED_SECRET_LEN];
-    hk.expand(b"sanct-message-key", &mut output)
-        .map_err(|_| CryptoError::KeyDerivation("HKDF expand failed".into()))?;
-
-    Ok(output)
 }
 
 fn combine_shared_secrets_v2(
@@ -281,13 +265,6 @@ mod tests {
             let mut public = [0u8; 32];
             public[0] = first_byte;
             assert!(decapsulate(
-                x25519.secret.as_bytes(),
-                mlkem.decapsulation_key.as_bytes().as_slice(),
-                &public,
-                &encap.mlkem_ciphertext,
-            )
-            .is_err());
-            assert!(decapsulate_v1(
                 x25519.secret.as_bytes(),
                 mlkem.decapsulation_key.as_bytes().as_slice(),
                 &public,
